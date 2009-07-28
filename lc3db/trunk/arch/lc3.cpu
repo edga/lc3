@@ -1,0 +1,218 @@
+/* *-*- C -*-* *\
+ *  LC-3 Simulator
+ *  Copyright (C) 2004  Anthony Liguori <aliguori@cs.utexas.edu>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+\*/
+
+#define boot() \
+{ \
+  PC = mem[0x01FF]; \
+}
+
+#define CPU_DEF "lc3.cpu"
+#define CPU_NAME LC3
+
+#include "cpu.def"
+
+#define setcc(a) \
+{ \
+  PSR &= 0xFFF8; \
+  PSR |= (a < 0) ? 4 : (a ? 1 : 2); \
+}
+
+#define do_interrupt(sig, pri) \
+{ \
+  if (((PSR >> 8) & 0x7) < pri) { \
+    do_exception(sig); \
+    PSR &= 0xFF8F; \
+    PSR |= (pri << 8); \
+  } \
+}
+
+#define do_exception(sig) \
+{ \
+  mem[--SSP] = PSR; \
+  PSR &= 0x7FFF; \
+  mem[--SSP] = R[6]; \
+  mem[--SSP] = PC; \
+  R[6] = SSP; \
+  PC = mem[0x0100 | sig]; \
+}
+
+#ifdef DO_OPS
+
+#define DR    (R[_dr])
+#define SR    (R[_sr])
+#define SR1   (R[_sr1])
+#define SR2   (R[_sr2])
+#define BaseR (R[_base])
+#define IMM   (_imm)
+#define VEC   (_vec)
+
+OP(ADD,   (0,0,0,1,A,A,A,C,C,C,0,0,0,D,D,D))
+{
+  DR = SR1 + SR2;
+  setcc(DR);
+}
+
+OP(ADD,   (0,0,0,1,A,A,A,C,C,C,1,F,F,F,F,F))
+{
+  DR = SR1 + IMM;
+  setcc(DR);
+}
+
+OP(AND,   (0,1,0,1,A,A,A,C,C,C,0,0,0,D,D,D))
+{
+  DR = SR1 & SR2;
+  setcc(DR);
+}
+
+OP(AND,   (0,1,0,1,A,A,A,C,C,C,1,F,F,F,F,F))
+{
+  DR = SR1 & IMM;
+  setcc(DR);
+}
+
+OP(NOP,   (0,0,0,0,0,0,0,F,F,F,F,F,F,F,F,F))
+{
+}
+
+OP(BRp,   (0,0,0,0,0,0,1,F,F,F,F,F,F,F,F,F))
+{
+  if (PSR & 0x1) PC += IMM;
+}
+
+OP(BRz,   (0,0,0,0,0,1,0,F,F,F,F,F,F,F,F,F))
+{
+  if (PSR & 0x2) PC += IMM;
+}
+
+OP(BRzp,  (0,0,0,0,0,1,1,F,F,F,F,F,F,F,F,F))
+{
+  if (PSR & 0x3) PC += IMM;
+}
+
+OP(BRn,   (0,0,0,0,1,0,0,F,F,F,F,F,F,F,F,F))
+{
+  if (PSR & 0x4) PC += IMM;
+}
+
+OP(BRnp,  (0,0,0,0,1,0,1,F,F,F,F,F,F,F,F,F))
+{
+  if (PSR & 0x5) PC += IMM;
+}
+
+OP(BRnz,  (0,0,0,0,1,1,0,F,F,F,F,F,F,F,F,F))
+{
+  if (PSR & 0x6) PC += IMM;
+}
+
+OP(BRnzp, (0,0,0,0,1,1,1,F,F,F,F,F,F,F,F,F))
+{
+  PC += IMM;
+}
+
+OP(RET,   (1,1,0,0,0,0,0,1,1,1,0,0,0,0,0,0))
+{
+  PC = R[7];
+}
+
+OP(JMP,   (1,1,0,0,0,0,0,E,E,E,0,0,0,0,0,0))
+{
+  PC = BaseR;
+}
+
+OP(JSR,   (0,1,0,0,1,F,F,F,F,F,F,F,F,F,F,F))
+{
+  R[7] = PC;
+  PC += IMM;
+}
+
+OP(JSRR,  (0,1,0,0,0,0,0,E,E,E,0,0,0,0,0,0))
+{
+  R[7] = PC;
+  PC = BaseR;
+}
+
+OP(LD,    (0,0,1,0,A,A,A,F,F,F,F,F,F,F,F,F))
+{
+  DR = mem[PC + IMM];
+  setcc(DR);
+}
+
+OP(LDI,   (1,0,1,0,A,A,A,F,F,F,F,F,F,F,F,F))
+{
+  DR = mem[mem[PC + IMM]];
+  setcc(DR);
+}
+
+OP(LDR,   (0,1,1,0,A,A,A,E,E,E,F,F,F,F,F,F))
+{
+  DR = mem[BaseR + IMM];
+  setcc(DR);
+}
+
+OP(LEA,   (1,1,1,0,A,A,A,F,F,F,F,F,F,F,F,F))
+{
+  DR = PC + IMM;
+  setcc(DR);
+}
+
+OP(NOT,   (1,0,0,1,A,A,A,B,B,B,1,1,1,1,1,1))
+{
+  DR = ~SR;
+  setcc(DR);
+}
+
+OP(RTI,   (1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
+{
+  if ((PSR & 0x8000) == 0) {
+    PC = mem[R[6]];
+    SSP = R[6] + 1;
+    R[6] = mem[SSP++];
+    PSR = mem[SSP++];
+  } else {
+    do_exception(0x00);
+  }
+}
+
+OP(ST,    (0,0,1,1,B,B,B,F,F,F,F,F,F,F,F,F))
+{
+  mem[PC + IMM] = SR;
+}
+
+OP(STI,   (1,0,1,1,B,B,B,F,F,F,F,F,F,F,F,F))
+{
+  mem[mem[PC + IMM]] = SR;
+}
+
+OP(STR,   (0,1,1,1,B,B,B,E,E,E,F,F,F,F,F,F))
+{
+  mem[BaseR + IMM] = SR;
+}
+
+OP(TRAP,  (1,1,1,1,0,0,0,0,G,G,G,G,G,G,G,G))
+{
+  R[7] = PC;
+  PC = mem[VEC];
+}
+
+OP(UNK,   (F,F,F,F,F,F,F,F,G,G,G,G,G,G,G,G))
+{
+  do_exception(0x01);
+}
+
+#endif

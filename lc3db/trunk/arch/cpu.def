@@ -1,0 +1,99 @@
+/* *-*- C++ -*-* *\
+ *  LC-3 Simulator
+ *  Copyright (C) 2004  Anthony Liguori <aliguori@cs.utexas.edu>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+\*/
+
+#ifndef _DEFINING_CPUDEF
+#define _DEFINING_CPUDEF
+
+#if !defined(CPU_DEF) || !defined(CPU_NAME)
+#error This file is not meant to be compiled directly
+#endif
+
+#include <stdint.h>
+#include "cpu.hpp"
+#include "util.hpp"
+
+namespace CPU_NAME {
+
+CPU::CPU(Memory &mem) : mem(mem)
+{
+  boot();
+}
+
+void CPU::cycle()
+{
+  int16_t _dr, _sr, _sr1, _sr2, _base, _imm, _vec;
+  uint16_t IR = mem[PC++];
+
+#define DO_OPS
+#define OP(name, bits)   \
+} else if (OP_EQ(IR, bits)) { \
+  if (MASK(A, bits)) _dr = ZEXT(A, IR, bits); \
+  if (MASK(B, bits)) _sr = ZEXT(B, IR, bits); \
+  if (MASK(C, bits)) _sr1 = ZEXT(C, IR, bits); \
+  if (MASK(D, bits)) _sr2 = ZEXT(D, IR, bits); \
+  if (MASK(E, bits)) _base = ZEXT(E, IR, bits); \
+  if (MASK(F, bits)) _imm = SEXT(F, IR, bits); \
+  if (MASK(G, bits)) _vec = ZEXT(G, IR, bits);
+
+  if (0) {
+#include CPU_DEF
+  }
+#undef DO_OPS
+#undef OP
+}
+
+void CPU::decode(uint16_t IR)
+{
+  int16_t _dr, _sr, _sr1, _sr2, _base, _imm, _vec;
+
+#define DO_OPS
+#define OP(name, bits)   \
+} else if (OP_EQ(IR, bits)) { \
+  if (MASK(A, bits)) _dr = ZEXT(A, IR, bits); \
+  if (MASK(B, bits)) _sr = ZEXT(B, IR, bits); \
+  if (MASK(C, bits)) _sr1 = ZEXT(C, IR, bits); \
+  if (MASK(D, bits)) _sr2 = ZEXT(D, IR, bits); \
+  if (MASK(E, bits)) _base = ZEXT(E, IR, bits); \
+  if (MASK(F, bits)) _imm = SEXT(F, IR, bits); \
+  if (MASK(G, bits)) _vec = ZEXT(G, IR, bits); \
+  printf("%s", # name); \
+  if (MASK(A, bits)) printf(" R%d", _dr); \
+  if (MASK(B, bits)) printf(" R%d", _sr); \
+  if (MASK(C, bits)) printf(" R%d", _sr1); \
+  if (MASK(D, bits)) printf(" R%d", _sr2); \
+  if (MASK(E, bits)) printf(" R%d", _base); \
+  if (MASK(F, bits)) printf(" %.4x (%d)", _imm & 0xFFFF, _imm); \
+  if (MASK(G, bits)) printf(" %.4x (%d)", _vec & 0xFFFF, _vec); \
+  printf("\n"); if (0)
+
+  if (0) {
+#include CPU_DEF
+  }
+#undef DO_OPS
+#undef OP
+}
+
+void CPU::interrupt(uint16_t signal, uint16_t priority) {
+  do_interrupt(signal, priority);
+}
+
+}
+
+#undef _DEFINING_CPUDEF
+#endif

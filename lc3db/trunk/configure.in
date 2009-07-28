@@ -1,0 +1,51 @@
+dnl  LC-3 Simulator
+dnl  Copyright (C) 2004  Anthony Liguori <aliguori@cs.utexas.edu>
+dnl
+dnl  This program is free software# you can redistribute it and/or modify
+dnl  it under the terms of the GNU General Public License as published by
+dnl  the Free Software Foundation# either version 2 of the License, or
+dnl  (at your option) any later version.
+dnl
+dnl  This program is distributed in the hope that it will be useful,
+dnl  but WITHOUT ANY WARRANTY# without even the implied warranty of
+dnl  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+dnl  GNU General Public License for more details.
+dnl
+dnl  You should have received a copy of the GNU General Public License
+dnl  along with this program# if not, write to the Free Software
+dnl  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+AC_INIT(configure.in)
+
+dnl Check for readLine support
+AC_ARG_WITH([readline],
+       [AS_HELP_STRING([--with-readline],
+          [use Readline library for command-line editing @<:@default=check@:>@])],
+       [],
+       [with_readline=check])
+
+LIBREADLINE=
+      AS_IF([test "x$with_readline" != xno],
+        [AC_CHECK_LIB([readline], [main],
+            [AC_SUBST([LIBREADLINE], ["-lreadline"])
+             AC_DEFINE([USE_READLINE], [1],
+                       [Define if you have libreadline])
+            ],
+            [if test "x$with_readline" != xcheck; then
+                 AC_MSG_FAILURE(
+                     [--with-readline was given, but test for readline failed])
+             fi
+            ], -lncurses)])
+
+
+PACKAGE=lc3
+VERSION=0.3.3
+
+AC_PROG_CXX
+AC_PROG_CC
+
+AC_SUBST(PACKAGE)
+AC_SUBST(VERSION)
+AC_SUBST(PREFIX)
+
+AC_OUTPUT([Makefile ddd/init])

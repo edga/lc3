@@ -1,0 +1,84 @@
+###############################################################################
+##
+##  LC-3 Simulator
+##  Copyright (C) 2004  Anthony Liguori <aliguori@cs.utexas.edu>
+##
+##  This program is free software# you can redistribute it and/or modify
+##  it under the terms of the GNU General Public License as published by
+##  the Free Software Foundation# either version 2 of the License, or
+##  (at your option) any later version.
+##
+##  This program is distributed in the hope that it will be useful,
+##  but WITHOUT ANY WARRANTY# without even the implied warranty of
+##  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+##  GNU General Public License for more details.
+##
+##  You should have received a copy of the GNU General Public License
+##  along with this program# if not, write to the Free Software
+##  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+##
+###############################################################################
+
+LDFLAGS=@LDFLAGS@
+CXX=@CXX@
+CC=@CC@
+PACKAGE=@PACKAGE@
+VERSION=@VERSION@
+PREFIX=@prefix@
+
+LIBS=@LIBS@ @LIBREADLINE@
+CXXFLAGS=-Iinclude @CXXFLAGS@ -DPREFIX=\"$(PREFIX)/\" @DEFS@
+CFLAGS=@CFLAGS@ 
+
+OBJ=src/hardware.o src/memory.o src/main.o arch/lc3.o src/lc3.o src/gdb.o
+
+all: bin/lc3db lib/los.obj
+
+bin/lc3db: $(OBJ)
+	$(CXX) -o $@ $(CXXFLAGS) $(OBJ) $(LDFLAGS) $(LIBS)
+
+lib/los.obj: bin/lc3db los/los.asm
+	bin/lc3db -c los/los.asm && mv los/los.obj los/los.dbg lib/
+
+lc3db.1: bin/lc3db
+	help2man -N bin/lc3db > lc3db.1
+
+install: bin/lc3db lib/los.obj #lc3db.1
+	install -D bin/lc3db $(PREFIX)/bin/lc3db
+	install -D lib/los.obj $(PREFIX)/lib/los.obj
+	install -D lib/los.dbg $(PREFIX)/lib/los.dbg
+	#install -D lc3db.1 $(PREFIX)/share/man/man1/lc3db.1
+
+distclean: really clean
+	$(RM) config.cache config.log config.status include/config.h Makefile \
+              src/Makefile ddd/init
+
+distcleancvs: distclean
+	$(RM) -r CVS arch/CVS bin/CVS include/CVS lib/CVS los/CVS src/CVS \
+	 	 ddd/CVS ddd/sessions/*
+
+dist:
+	rm -rf lc3db-$(VERSION) && \
+	mkdir lc3db-$(VERSION) && \
+	cp -r Makefile* configure* arch bin include lib los src ddd \
+              lc3db-$(VERSION) && \
+	$(MAKE) -C lc3db-$(VERSION) distcleancvs && \
+	tar cvfz lc3db-$(VERSION).tar.gz lc3db-$(VERSION) && \
+	rm -rf lc3db-$(VERSION)
+
+clean:
+	$(RM) $(OBJ)  bin/lc3db src/lc3.o src/lex.lc3.c lib/los.obj \
+                      lib/los.dbg lc3db.1 los/*.obj los/*.dbg
+
+really:
+	$(RM) *~ src/*~ arch/*~
+
+tidy:
+	$(RM) config.cache config.log config.status
+
+%.o: %.cpu
+	$(CXX) -c -o $@ $(CXXFLAGS) -xc++ $<
+
+src/lc3.o: src/lc3.f
+	flex -i -osrc/lex.lc3.c -Plc3 src/lc3.f
+	$(CC) -c -o src/lc3.o $(CFLAGS) src/lex.lc3.c

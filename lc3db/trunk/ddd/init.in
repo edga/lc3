@@ -1,0 +1,172 @@
+! DO NOT ADD ANYTHING BELOW THIS LINE -- DDD WILL OVERWRITE IT
+! Debugger settings.
+Ddd*debugger: gdb
+Ddd*debuggerCommand: @prefix@/bin/lc3db
+Ddd*useSourcePath: off
+! Ddd*gdbSettings: \
+! set print asm-demangle on\n
+! Ddd*dbxSettings: 
+! Ddd*xdbSettings: 
+! Ddd*jdbSettings: 
+! Ddd*pydbSettings: 
+! Ddd*perlSettings: 
+Ddd*gdbInitCommands: \
+graph display `x /xb regs` at (220, 30)\n
+
+! Source.
+Ddd*findWordsOnly: on
+Ddd*findCaseSensitive: on
+! Ddd*tabWidth: 8
+! Ddd*indentSource: 0
+! Ddd*indentCode: 4
+Ddd*cacheSourceFiles: on
+Ddd*cacheMachineCode: on
+Ddd*displayGlyphs: on
+Ddd*displayLineNumbers: off
+Ddd*disassemble: on
+Ddd*allRegisters: off
+
+! Undo Buffer.
+! Ddd*maxUndoDepth: -1
+! Ddd*maxUndoSize: 2000000
+
+! Misc preferences.
+Ddd*keyboardFocusPolicy: POINTER
+Ddd*statusAtBottom: on
+Ddd*suppressWarnings: off
+Ddd*warnIfLocked: off
+Ddd*checkGrabs: on
+Ddd*saveHistoryOnExit: on
+Ddd*paperSize: 210mm x 297mm
+Ddd*blinkWhileBusy: on
+Ddd*splashScreen: on
+Ddd*startupTips: off
+
+! Keys.
+Ddd*globalTabCompletion: on
+Ddd*cutCopyPasteBindings: Motif
+Ddd*selectAllBindings: KDE
+
+! Data.
+Ddd*pannedGraphEditor: off
+Ddd*graph_edit.showGrid: on
+Ddd*graph_edit.snapToGrid: on
+Ddd*graph_edit.showHints: on
+Ddd*graph_edit.showAnnotations: on
+Ddd*graph_edit.layoutMode: regular
+Ddd*graph_edit.autoLayout: off
+Ddd*showBaseDisplayTitles: off
+Ddd*showDependentDisplayTitles: off
+Ddd*autoCloseDataWindow: on
+Ddd*graph_edit.gridWidth: 16
+Ddd*graph_edit.gridHeight: 16
+Ddd*detectAliases: off
+Ddd*clusterDisplays: off
+Ddd*displayPlacement: XmVERTICAL
+Ddd*align2dArrays: on
+Ddd*arrayOrientation: XmVERTICAL
+Ddd*structOrientation: XmVERTICAL
+Ddd*showMemberNames: on
+
+! Themes.
+Ddd*themes: \
+! tinyvalues.vsl	\n\
+! suppress.vsl	\n\
+! smallvalues.vsl	\n\
+! smalltitles.vsl	\n\
+! red.vsl	\n\
+! green.vsl	\n
+
+! Tips.
+Ddd*buttonTips: on
+Ddd*valueTips: on
+Ddd*buttonDocs: on
+Ddd*valueDocs: on
+
+! Helpers.
+! Ddd*editCommand: ${XEDITOR-false} +@LINE@ @FILE@ || xterm -e ${EDITOR-vi} +@LINE@ @FILE@
+! Ddd*getCoreCommand: 
+! Ddd*psCommand: ps x 2> /dev/null || ps -ef 2> /dev/null || ps
+! Ddd*termCommand: xterm -bg \'grey96\' -fg \'black\' -cr \'DarkGreen\' -fn \'@FONT@\' -title \'DDD: Execution Window\' -e /bin/sh -c
+! Ddd*uncompressCommand: gzip -d -c
+! Ddd*wwwCommand: mozilla -remote \'openURL(@URL@)\' || netscape -remote \'openURL(@URL@)\' || ${WWWBROWSER-false} \'@URL@\' || mozilla \'@URL@\' || kfmbrowser \'@URL@\' || netscape \'@URL@\' || gnudoit \'(w3-fetch \"@URL@\")\' || mosaic \'@URL@\' || Mosaic \'@URL@\' || xterm -e lynx \'@URL@\'
+! Ddd*plotCommand: gnuplot -bg \'grey96\' -font \'@FONT@\' -name \'@NAME@\' -geometry +5000+5000
+Ddd*plotTermType: xlib
+! Ddd*printCommand: lp -c
+
+! Tool Bars.
+Ddd*toolbarsAtBottom: off
+Ddd*buttonImages: on
+Ddd*buttonCaptions: on
+Ddd*flatToolbarButtons: on
+Ddd*flatDialogButtons: on
+Ddd*buttonColorKey: g
+Ddd*activeButtonColorKey: c
+
+! Buttons.
+Ddd*consoleButtons: \
+run//Boot\n \
+step\n \
+next\n
+Ddd*toolButtons: \
+run//Boot\nstep\nnext\n
+
+Ddd*sourceButtons: 
+Ddd*dataButtons: 
+Ddd*verifyButtons: on
+
+! Display shortcuts.
+! Ddd*gdbDisplayShortcuts: \
+! /t ()	// Convert to Bin\n\
+! /d ()	// Convert to Dec\n\
+! /x ()	// Convert to Hex\n\
+! /o ()	// Convert to Oct
+! Ddd*dbxDisplayShortcuts: 
+! Ddd*xdbDisplayShortcuts: 
+! Ddd*jdbDisplayShortcuts: 
+! Ddd*pydbDisplayShortcuts: \
+! /t ()	// Convert to Bin\n\
+! /d ()	// Convert to Dec\n\
+! /x ()	// Convert to Hex\n\
+! /o ()	// Convert to Oct
+! Ddd*perlDisplayShortcuts: \
+! sprintf(\"%#x\", ())	// Convert to Hex\n\
+! sprintf(\"%#o\", ())	// Convert to Oct
+
+! Fonts.
+! Ddd*defaultFont: helvetica-medium
+! Ddd*variableWidthFont: helvetica-medium
+! Ddd*fixedWidthFont: lucidatypewriter-medium
+! Ddd*dataFont: lucidatypewriter-medium
+Ddd*defaultFontSize: 120
+Ddd*variableWidthFontSize: 120
+Ddd*fixedWidthFontSize: 120
+Ddd*dataFontSize: 120
+
+! Windows.
+Ddd*openDataWindow: on
+Ddd*openSourceWindow: off
+Ddd*openDebuggerConsole: on
+Ddd*separateSourceWindow: off
+Ddd*separateDataWindow: off
+Ddd*separateExecWindow: on
+Ddd*groupIconify: off
+Ddd*uniconifyWhenReady: on
+
+! Command Tool.
+Ddd*commandToolBar: off
+Ddd*toolRightOffset: -578
+Ddd*toolTopOffset: 117
+
+! Maintenance.
+Ddd*dumpCore: on
+Ddd*debugCoreDumps: off
+
+! Window sizes.
+Ddd*graph_edit.height: 66
+Ddd*source_text_w.columns: 1
+Ddd*source_text_w.rows: 0
+Ddd*code_text_w.columns: 80
+Ddd*code_text_w.rows: 24
+Ddd*gdb_w.columns: 80
+Ddd*gdb_w.rows: 5

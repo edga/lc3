@@ -1,0 +1,6 @@
+run
+load fib-8.obj
+graph display `x /d000xb xcfd0`
+n
+quit
+

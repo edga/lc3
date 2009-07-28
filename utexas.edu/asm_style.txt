@@ -1,0 +1,60 @@
+                 CS 310 Assembly Language Program Style Guidelines
+			    (Last updated  3/3/2007)
+
+(0) Your program style, readability, and documentation will impact your program 
+    grade by as much as 10%... 
+
+(1) Every assembly language program must include a program header comment
+    with this format, as the first information in the file:
+
+; Program Filename:   (with hmwk# and question #)
+; Your Name:
+; Your Unix ID:
+; TA's Name and Discussion Section Time:
+;
+; SUMMARY (Describe what the program does)
+;
+; INPUT
+;	Describe the set of inputs. Describe input error checking, if any.
+;
+; OUTPUT
+;	Describe what appears on the screen as output.
+;
+; REGISTERS
+;       Describe the role of each register.
+
+(2) Symbolic names must be meaningful. Use a mixture of upper and lower case 
+    to maximize readability. Some good examples:
+   	SaveR1
+   	ASCIItoBinary
+   	InputRoutine
+
+(3) Add a comment before each section of the program, describing what
+    it does, normally specifying it in "high-level-language" (HLL) statements
+
+(4) Use HLL code as much as possible to comment your code.  e.g. ;COUNT++
+    (as compared to explaining that you are adding 1 to R2).  You don't need
+    to document every line of code, since 1 HLL statement maps to multiple
+    instructions.
+
+(5) All code and comments should fit on the page; i.e., they should
+    not wrap around or be truncated. Long statements that would run off the
+    page should be split in an aesthetically pleasing, readable manner.
+
+-----------------------------------------------------------------------------
+IGNORE THIS SECTION UNTIL WE BEGIN WRITING FUNCTIONS (IN HMWK 6).
+Provide the following comment block *per subroutine" and for the main
+    program, when applicable.
+; SUMMARY:
+; ASSUMPTIONS:    List any assumptions that you make.  For example, if you 
+;		   assume that a particular input data item is always valid, 
+;                  state that.
+; PARAMETERS:     Description of each parameter, and how it is passed, and 
+;		   if it is a register, then is it modified in the subroutine...
+; RETURN VALUE:   Description
+; STACK DIAGRAM:  When we pass parameters via the stack or construct a
+;		   "stack frame" or "activation record", then diagram this 
+; REGISTER usage: Specify the role of each register.
+
+(with thanks to the other CS310 faculty and the original guidelines provided 
+at the University of Michigan for EECS/CS 100)
