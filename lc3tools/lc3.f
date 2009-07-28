@@ -48,6 +48,8 @@ part of the label?  Currently I allow only alpha followed by alphanum and _.
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
+#include <limits.h>
 
 #include "symbol.h"
 
@@ -178,9 +180,22 @@ struct inst_t {
 };
 
 static int pass, line_num, num_errors, saw_orig, code_loc, saw_end;
+static int code_orig;
 static inst_t inst;
 static FILE* symout;
 static FILE* objout;
+/*
+ * "base.bin" file used to initialize content of memory in VHDL code.
+ * Each generated word is output on separate line as sequence of 16 characters ('1' or '0')
+ */
+static FILE* binout;
+/*
+ * "base.ser" file used to program CPU over the serial cable.
+ * First word is count of bytes to transfer. Rest of the content is the same as "base.obj" file:
+ * Second word is starting offset in the memory.
+ * The rest is content of the memory
+ */
+static FILE* serout;
 
 static void new_inst_line ();
 static void bad_operands ();
@@ -310,6 +325,8 @@ RET       {inst.op = OP_RET;   BEGIN (ls_operands);}
 
 %%
 
+static void write_ser_value (int val);
+
 int
 main (int argc, char** argv)
 {
@@ -344,10 +361,21 @@ main (int argc, char** argv)
 
     /* Open output files. */
     strcpy (ext, ".obj");
-    if ((objout = fopen (fname, "w")) == NULL) {
+    if ((objout = fopen (fname, "wb")) == NULL) {
         fprintf (stderr, "Could not open %s for writing.\n", fname);
 	return 2;
     }
+    strcpy (ext, ".bin");
+    if ((binout = fopen (fname, "w")) == NULL) {
+        fprintf (stderr, "Could not open %s for writing.\n", fname);
+	return 2;
+    }
+    strcpy (ext, ".ser");
+    if ((serout = fopen (fname, "wb")) == NULL) {
+        fprintf (stderr, "Could not open %s for writing.\n", fname);
+	return 2;
+    }
+
     strcpy (ext, ".sym");
     if ((symout = fopen (fname, "w")) == NULL) {
         fprintf (stderr, "Could not open %s for writing.\n", fname);
@@ -391,6 +419,11 @@ main (int argc, char** argv)
         perror ("fseek to start of ASM file");
 	return 3;
     }
+
+    /* size of generated code is now known */
+    write_ser_value(code_loc-code_orig);
+
+
     yyrestart (lc3in);
     /* Return lexer to initial state.  It is otherwise left in ls_finished
        if an .END directive was seen. */
@@ -412,6 +445,8 @@ main (int argc, char** argv)
     fprintf (symout, "\n");
     fclose (symout);
     fclose (objout);
+    fclose (serout);
+    fclose (binout);
 
     return 0;
 }
@@ -464,30 +499,53 @@ read_val (const char* s, int* vptr, int bits)
     char* trash;
     long v;
 
+    errno = 0;    /* To distinguish success/failure after call */
     if (*s == 'x' || *s == 'X')
-	v = strtol (s + 1, &trash, 16);
+        v = strtol (++s, &trash, 16);
     else {
-	if (*s == '#')
-	    s++;
-	v = strtol (s, &trash, 10);
+        if (*s == '#')
+            s++;
+        v = strtol (s, &trash, 10);
     }
+
+    /* check for strtol() failure */
+    if ( s == trash
+            || (errno == ERANGE && (v == LONG_MAX || v == LONG_MIN))
+            || (errno != 0 && v == 0)) {
+        fprintf (stderr, "%3d: cant recognise the number (%s)\n", line_num, s);
+        num_errors++;
+        return -1;
+    }
+
     if (0x10000 > v && 0x8000 <= v)
         v |= -65536L;   /* handles 64-bit longs properly */
     if (v < -(1L << (bits - 1)) || v >= (1L << bits)) {
-	fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
-	num_errors++;
-	return -1;
+    fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+    num_errors++;
+    return -1;
     }
     if ((v & (1UL << (bits - 1))) != 0)
-	v |= ~((1UL << bits) - 1);
+    v |= ~((1UL << bits) - 1);
     *vptr = v;
     return 0;
+}
+
+static void
+write_ser_value (int val)
+{
+    unsigned char out[2];
+
+    out[0] = (val >> 8);
+    out[1] = (val & 0xFF);
+    fwrite (out, 2, 1, serout);
 }
 
 static void
 write_value (int val)
 {
     unsigned char out[2];
+    unsigned char bits[16+1];
+    int i;
 
     code_loc = (code_loc + 1) & 0xFFFF;
     if (pass == 1)
@@ -496,6 +554,19 @@ write_value (int val)
     out[0] = (val >> 8);
     out[1] = (val & 0xFF);
     fwrite (out, 2, 1, objout);
+    fwrite (out, 2, 1, serout);
+    if (saw_orig) { /* don't write the offset (the first word) into bin file */
+        bits[0] = '\n';
+        for (i=1; i <= 16; i++)
+            bits[i] = (val & (1U << (16-i))) ? '1' : '0';
+
+        /* Xilinx doesn't like trailing end of line, so we avoid it at the end */
+        if (code_loc-1 > code_orig)
+            fwrite (bits, 17, 1, binout);
+        else
+            fwrite (bits+1, 16, 1, binout);
+    }
+    
 }
 
 static char*
@@ -574,9 +645,11 @@ generate_instruction (operands_t operands, const char* opstr)
     if (inst.op == OP_ORIG) {
 	if (saw_orig == 0) {
 	    if (read_val (o1, &code_loc, 16) == -1)
-		/* Pick a value; the error prevents code generation. */
+		/* Pick arbitrary value, to continue input processing to report other errors.
+                   The num_errors variable will prevent code generation. */
 		code_loc = 0x3000; 
 	    else {
+                code_orig = code_loc;        /* remember orig to calculate size of code block */
 	        write_value (code_loc);
 		code_loc--; /* Starting point doesn't count as code. */
 	    }
@@ -722,7 +795,11 @@ generate_instruction (operands_t operands, const char* opstr)
 			default: write_value (str[1]); str++; break;
 		    }
 		} else {
-		    if (str[0] == '\n')
+                    if (str[0] == '\r') {
+                        if (str[1] == '\n') 
+                            str++;
+                        line_num++;
+                    } else if (str[0] == '\n')
 		        line_num++;
 		    write_value (*str);
 		}

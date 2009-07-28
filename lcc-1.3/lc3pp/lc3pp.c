@@ -12,8 +12,8 @@ Modified: 1/05/2004
    Now supports arbitrary sizes for global variable names and source code line
    length and an arbitrary number of global variables.  Also, the linker now
    requires an argument specifing the path to the libcode directory.
-	
-Modified: 3/31/2004 
+
+Modified: 3/31/2004
    Functions as a proper linker at the .asm level, and thus takes multiple
    source files as command line arguments.  It is necessary to specify an
    output file as the last command line argument and the path to the lc3lib
@@ -26,6 +26,9 @@ Modified: 3/31/2004
 #include<unistd.h>
 
 #define LINE_MAXLEN 100
+
+#define MIN(x, y) ((x)<(y) ? (x):(y))
+#define MAX(x, y) ((x)<(y) ? (y):(x))
 
 typedef struct {
    char* name;
@@ -69,11 +72,11 @@ int Getword(char* line, char* buf);
   the correct imported code from the other source files provided
   in the command line
   */
-void 
+void
 resolve_externs(FILE** files, link_list link, int argc)
 {
    char* buf, *word;
-   int buf_max = 200, word_max =200; 
+   int buf_max = 200, word_max =200;
    int present_flag = 0, end_flag = 0;
    int len=0, num=0, i=0, j=0, k=0;
    int mfile;
@@ -85,7 +88,7 @@ resolve_externs(FILE** files, link_list link, int argc)
    buf = (char*) malloc(buf_max);
    word = (char*) malloc(word_max);
 
-   for(k=0; k<link.gi; k++) 
+   for(k=0; k<link.gi; k++)
       if(strcmp(link.g[k].name,"main") == 0)
          break;
    mfile = link.g[k].argn;
@@ -96,14 +99,14 @@ resolve_externs(FILE** files, link_list link, int argc)
      */
    while(1) {
       Readline(files[mfile], &buf, &buf_max);
-      if(strncmp(buf, ".extern", 7)==0) 
+      if(strncmp(buf, ".extern", 7)==0)
          break;
       if(strncmp(buf, ".END", 4)==0) {
          fprintf(files[argc-2],"%s\n",buf);
          free(used_var); free(buf); free(word);
          return;	/*done*/
       }
-      if(strncmp(buf, ".global", 7)!=0) 
+      if(strncmp(buf, ".global", 7)!=0)
          fprintf(files[argc-2],"%s\n",buf);
    }
 
@@ -116,12 +119,12 @@ resolve_externs(FILE** files, link_list link, int argc)
          buf = (char*) realloc(buf, buf_max);
       }
 
-      strcpy(buf,link.e[k].name);   
-      strcpy(buf+strlen(link.e[k].name),".asm");   
+      strcpy(buf,link.e[k].name);
+      strcpy(buf+strlen(link.e[k].name),".asm");
 
       /*locates the file that has the current externed symbol*/
       for(i=0; i<link.gi; i++) {
-         if(strcmp(link.g[i].name, link.e[k].name) == 0) 
+         if(strcmp(link.g[i].name, link.e[k].name) == 0)
             break;
       }
 
@@ -136,7 +139,7 @@ resolve_externs(FILE** files, link_list link, int argc)
             word = (char*) realloc(word, word_max);
          }
          strcpy(word,".global ");
-         strcat(word+8, link.g[i].name); 
+         strcat(word+8, link.g[i].name);
 
          while(1) {
             Readline(files[num], &buf, &buf_max);
@@ -178,13 +181,13 @@ resolve_externs(FILE** files, link_list link, int argc)
 
                         if(used_num == used_max) {
                            used_max = used_max <<1;
-                           used_var = (used_variable*) 
+                           used_var = (used_variable*)
                               realloc(used_var,used_max);
                         }
 
                         /*dont insert in used_var unless new*/
                         present_flag = 0;
-                        for(i=0; i<used_num; i++) 
+                        for(i=0; i<used_num; i++)
                            if(used_var[i].name != NULL)
                               if(strcmp(word, used_var[i].name)==0) {
                                  present_flag = 1;
@@ -231,7 +234,7 @@ resolve_externs(FILE** files, link_list link, int argc)
                         }
                      } else if(strncmp(buf, "RET",3) == 0) {
                         break;
-                     } 
+                     }
                   }
 
                   /*if any used_vars are externed then set label and
@@ -239,21 +242,21 @@ resolve_externs(FILE** files, link_list link, int argc)
                     */
                   for(i=0; i<used_num; i++) {
                      for(j=0; j<link.ei; j++) {
-                        if(link.e[j].argn == num && 
+                        if(link.e[j].argn == num &&
                               strcmp(link.e[j].name, used_var[i].name)==0) {
                            used_var[i].label = 1;
-                           for(j=0; j<link.ei; j++) 
-                              if(link.e[j].argn == 0 && 
+                           for(j=0; j<link.ei; j++)
+                              if(link.e[j].argn == 0 &&
                                     strcmp(link.e[j].name, used_var[i].name)==0)
                                  break;
 
                            if(j == link.ei) {
                               if( link.ei == link.em) {
                                  link.em = link.em << 1;
-                                 link.e = realloc(link.e, 
+                                 link.e = realloc(link.e,
                                        sizeof(link_variable)*link.em);
                               }
-                              link.e[link.ei].name =(char*) 
+                              link.e[link.ei].name =(char*)
                                  malloc(strlen(used_var[i].name));
                               strcpy(link.e[link.ei].name, used_var[i].name);
                               link.e[link.ei++].argn = mfile;
@@ -302,7 +305,7 @@ resolve_externs(FILE** files, link_list link, int argc)
                      }
                   }
                   /*free memory for used_var for next externed func*/
-                  for(i=0; i<used_num; i++) 
+                  for(i=0; i<used_num; i++)
                      free(used_var[i].name);
                   used_num = 0;
                }
@@ -310,7 +313,7 @@ resolve_externs(FILE** files, link_list link, int argc)
             if(strncmp(buf, ".END", 4)==0)
                break;	/*done*/
          }
-      } 
+      }
       else if( (files[argc-1] = fopen(buf, "r")) == NULL)
          printf("error reading file %s\n",buf);
       else {
@@ -322,7 +325,7 @@ resolve_externs(FILE** files, link_list link, int argc)
          }
          fclose(files[argc-1]);
       }
-   } 
+   }
 
    /*copy rest of the input file into output file
      ignoring all .externs and .globals
@@ -335,7 +338,7 @@ resolve_externs(FILE** files, link_list link, int argc)
          break;	/*done*/
       }
 
-      if(strncmp(buf, ".global", 7)!=0 && strncmp(buf, ".extern", 7)!=0) 
+      if(strncmp(buf, ".global", 7)!=0 && strncmp(buf, ".extern", 7)!=0)
          fprintf(files[argc-2],"%s\n",buf);
    }
 
@@ -343,8 +346,59 @@ resolve_externs(FILE** files, link_list link, int argc)
    return;
 }
 
-int 
-main (int argc, char *argv[]) 
+int check_ldr(const char *line, int reg_num, int *poffset)
+{
+   /* [] sets are not ANSI-C and don't work on windows, so have to parse it manually:
+      return sscanf(line, " [lL][dD][rR] [rR]%d, [rR]%d, #%d", &rd, &rb, poffset)==3
+                && rd == rb && rd == reg_num;
+   */
+  
+   const char *c = line;
+   char *trash;
+   long off;
+  
+   /* skip leading spaces */
+   while (isspace(*c)) c++;
+   
+   /* check for LDR */
+   if (*c != 'l' && *c != 'L') return 0; c++;
+   if (*c != 'd' && *c != 'D') return 0; c++;
+   if (*c != 'r' && *c != 'R') return 0; c++;
+
+   while (isspace(*c)) c++;
+   
+   /* check for first R<reg_num> */
+   if (*c != 'r' && *c != 'R') return 0; c++;
+   if (*c != reg_num+'0') return 0; c++;
+   
+   while (isspace(*c)) c++;
+   if (*c != ',') return 0; c++;
+   while (isspace(*c)) c++;
+   
+   /* check for second R<reg_num> */
+   if (*c != 'r' && *c != 'R') return 0; c++;
+   if (*c != reg_num+'0') return 0; c++;
+   
+   while (isspace(*c)) c++;
+   if (*c != ',') return 0; c++;
+   while (isspace(*c)) c++;
+   
+   /* check for offset */
+   if (*c == 'x' || *c == 'X')
+      off = strtol (c + 1, &trash, 16);
+   else {
+      if (*c == '#')
+	      c++;
+	   off = strtol (c, &trash, 10);
+   }
+   if (c == trash) return 0;
+   
+   *poffset = off;
+   return 1;
+}
+
+int
+main (int argc, char *argv[])
 {
    FILE *output_file, *code_file, *var_file, *full_file;
    int i=0;
@@ -354,6 +408,7 @@ main (int argc, char *argv[])
 
    /*used when replacing .LC3Global lines*/
    int reg_num=0, offset=0;
+   int rd, rb, with_LDR;
 
    /*This array will hold FILE* to input source files*/
    FILE** files;
@@ -373,7 +428,7 @@ main (int argc, char *argv[])
 
    curr_line = malloc(LINE_MAXLEN);
    tmp_line = malloc(LINE_MAXLEN);
-   var_name = malloc(LINE_MAXLEN); 
+   var_name = malloc(LINE_MAXLEN);
 
    g_vars = malloc(sizeof(variable)*g_total);
 
@@ -392,7 +447,7 @@ main (int argc, char *argv[])
    argc--;
    for(i=0; i<argc-2; i++) {
       files[i] = fopen(argv[i+2], "r");
-      if( files[i] == NULL) { 
+      if( files[i] == NULL) {
          printf("Error opening file %s\n", argv[i+2]);
          return -1;
       }
@@ -454,7 +509,7 @@ main (int argc, char *argv[])
    /*argv[1] == libpath*/
    chdir(argv[1]);
 
-   /* Imports externed functions and variables 
+   /* Imports externed functions and variables
       Eliminates .global declarations
       returns FILE* to complete file in files[argc-2], also in full_file
       */
@@ -473,9 +528,9 @@ main (int argc, char *argv[])
    rewind(full_file);
 
    /* Input file's variables and code are separated into
-    * into separate files for processing and then later merging 
+    * into separate files for processing and then later merging
     * All LC3_GFLAGS are stripped and a global variable table is made
-    */ 
+    */
    while(1) {
       /*Read one line*/
       Readline(full_file, &curr_line, &curr_line_maxlen);
@@ -537,7 +592,7 @@ main (int argc, char *argv[])
      except with .asm suffix
      */
    /*
-      for(i=0; i<link.gi; i++) 
+      for(i=0; i<link.gi; i++)
       if(strcmp(link.g[i].name,"main") == 0)
       break;
       strcpy(tmp_line, argv[2+link.g[i].argn]);
@@ -551,8 +606,9 @@ main (int argc, char *argv[])
     */
    while(1) {
       Readline(code_file, &curr_line, &curr_line_maxlen);
+   handle_line:
       if(strncmp(curr_line, ".END", 4)==0)
-         break;	
+         break;
 
       if(strncmp(curr_line, ".LC3GLOBAL", 10)!=0)
          fprintf(output_file, "%s\n", curr_line);
@@ -573,10 +629,14 @@ main (int argc, char *argv[])
          strcpy(var_name, curr_line+11);
          i = 0;
          offset=0;
-         while (var_name[++i] != '+' && var_name[i] != '-' 
+         while (var_name[++i] != '+' && var_name[i] != '-'
                && var_name[i] != ' ');
          if(var_name[i] == '+' || var_name[i] == '-') {
             offset += atoi(var_name+i);
+            /* Seams that following should be right:
+	            offset += ( var_name[i]=='+' ? 1: -1) * atoi(var_name+i);
+	            Unfortunately this doesn't work. Probably backend means '+' when it writes '-'
+	         */
          }
          var_name[i] = '\0';
 
@@ -586,28 +646,98 @@ main (int argc, char *argv[])
             offset+=g_vars[i].size;
          }
 
+         
+         /* See if offset of global variable is needed just to load that
+          * variable.
+          * If next instruction has form:
+          *     LDR R<reg_num>, R<reg_num>, #0      ; R<reg_num> is the same
+          * We know that label offset requested to be put in R<reg_num> by
+          * ".LC3GLOBAL <label> <reg_num>" directive is overwritten and part
+          * of offset calculation can be done in "LDR" instruction.
+          */
+         Readline(code_file, &curr_line, &curr_line_maxlen);
+         with_LDR = check_ldr(curr_line, reg_num, &i);
+         if(with_LDR) {
+            offset += i;
+         }
+         
+         /* Print a user friendly comment */
+         if(with_LDR)
+            fprintf(output_file, "; LD R%d, %s\t;GLOB:%d\n", reg_num, var_name, offset);
+         else
+            fprintf(output_file, "; LEA R%d, %s\t;GLOB:%d\n", reg_num, var_name, offset);
+
+         /* Load <offset> into R<reg_num> (possibly followed by LDR) */
          i=offset;
-         if(i<0) {
-            if(i > -16)
-               fprintf(output_file, "ADD R%d, R4, #%d\n",reg_num,i);
-            else {
-               fprintf(output_file, "ADD R%d, R4, #-16\n",reg_num);
-               for(i+=16; i<-16; i+=16)
-                  fprintf(output_file, "ADD R%d, R%d, #-16\n",reg_num,reg_num);
-               fprintf(output_file, "ADD R%d, R%d, #%d\n",reg_num,reg_num,i);
+         if(i>=0) {
+            /* Calculate how much can we use as an offset in LDR instruction */
+            offset = with_LDR ? MIN(i,31) : 0;
+            i -= offset;
+            if (i <= 4*15) { /* Is it cheaper to calculate offset */
+               if (with_LDR && i==0) /* skip it if we can load offset directly in LDR */
+                  fprintf(output_file, "LDR R%d, R4, #%d\n", reg_num, offset);
+               else {
+                  if (i <= 15)
+                     fprintf(output_file, "ADD R%d, R4, #%d\n",reg_num,i);
+                  else {
+                     fprintf(output_file, "ADD R%d, R4, #15\n",reg_num);
+                     for(i-=15;i>15; i-=15)
+                        fprintf(output_file, "ADD R%d, R%d, #15\n",reg_num,reg_num);
+                     fprintf(output_file, "ADD R%d, R%d, #%d\n",reg_num,reg_num,i);
+                  }
+                  if (with_LDR)
+                     fprintf(output_file, "LDR R%d, R%d, #%d\n", reg_num, reg_num, offset);
+               }
+            }
+            else {   /* It's cheaper to load offset from instruction stream */
+               fprintf(output_file, "BR #1\n"
+                       ".FILL #%d\n"
+                       "LD R%d, #-2\n"
+                       "ADD R%d, R%d, R4\n", i+offset, reg_num, reg_num, reg_num);
+               if (with_LDR)
+                  fprintf(output_file, "LDR R%d, R%d, #0\n", reg_num, reg_num);
             }
          }
-         else {
-            if(i < 15)
-               fprintf(output_file, "ADD R%d, R4, #%d\n",reg_num,i);
-            else {
-               fprintf(output_file, "ADD R%d, R4, #15\n",reg_num);
-               for(i-=15;i>15; i-=15)
-                  fprintf(output_file, "ADD R%d, R%d, #15\n",reg_num,reg_num);
-               fprintf(output_file, "ADD R%d, R%d, #%d\n",reg_num,reg_num,i);
+         else { /* i < 0 */
+            /* Calculate how much can we use as an offset in LDR instruction */
+            offset = with_LDR ? MAX(i,-32) : 0;
+            i += offset;
+            if (i >= -4*16) { /* Is it cheaper to calculate offset */
+               if (with_LDR && i==0) /* skip it if we can load offset directly in LDR */
+                  fprintf(output_file, "LDR R%d, R4, #%d\n", reg_num, offset);
+               else {
+                  if(i >= -16)
+                     fprintf(output_file, "ADD R%d, R4, #%d\n",reg_num,i);
+                  else {
+                     fprintf(output_file, "ADD R%d, R4, #-16\n",reg_num);
+                     for(i+=16;i<-16; i+=16)
+                        fprintf(output_file, "ADD R%d, R%d, #-16\n",reg_num,reg_num);
+                     fprintf(output_file, "ADD R%d, R%d, #%d\n",reg_num,reg_num,i);
+                  }
+                  if (with_LDR)
+                     fprintf(output_file, "LDR R%d, R%d, #%d\n", reg_num, reg_num, offset);
+               }
+            }
+            else {   /* It's cheaper to load offset from instruction stream */
+               fprintf(output_file, "BR #1\n"
+                       ".FILL #%d\n"
+                       "LD R%d, #-2\n"
+                       "ADD R%d, R%d, R4\n", i+offset, reg_num, reg_num, reg_num);
+               if (with_LDR)
+                  fprintf(output_file, "LDR R%d, R%d, #0\n", reg_num, reg_num);
             }
          }
-      } 
+         
+         if (!with_LDR) {
+            fprintf(output_file, ";\tend LEA\n");
+            
+            /* The extra line we have read was not the LDR, so we need handle it.
+             *   We can't just print it, because it might be one of directives. */
+            goto handle_line;
+         }
+         else
+            fprintf(output_file, ";\tend LD\n");
+      }
    }
 
    fprintf(output_file,"\nGLOBAL_DATA_START\n");

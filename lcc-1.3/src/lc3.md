@@ -529,6 +529,7 @@ static void progbeg(int argc, char *argv[]) {
 
 	print(".Orig x3000\n");
 	print("INIT_CODE\n");
+	/*
 	print("LEA R6, #-1\n");		//puts x3000 in r6
 	lc3_addimm(5,6,0);//r5=x3000
 	lc3_add(6,6,6);//r6=x6000
@@ -538,12 +539,16 @@ static void progbeg(int argc, char *argv[]) {
 
 	lc3_add(5,5,5);//r5=x6000
 	lc3_addimm(5,6,0);//r5=xefff
+	*/
+	print("LD R5, STACK_ADDR\n"
+	      "ADD R6, R5, #0\n");	
 	print("LD R4, GLOBAL_DATA_POINTER\n");		//puts x3000 in r6
 	print("LD R7, GLOBAL_MAIN_POINTER\n");		//puts x3000 in r6
 	print("jsrr R7\n");
 	print("HALT\n\n");
 	print("GLOBAL_DATA_POINTER .FILL GLOBAL_DATA_START\n");
 	print("GLOBAL_MAIN_POINTER .FILL main\n");
+	print("STACK_ADDR .FILL xefff\n");
 
 }
 /************************************************************
@@ -790,6 +795,7 @@ static void emit2(Node p) {
 			labels[1] = genlabel(1);
 
 			prologue(p,&x,&y,&z,&yflag,&destflag);	
+			lc3_push(z);
 
 			lc3_addimm(x,y,0);
 
@@ -807,6 +813,7 @@ static void emit2(Node p) {
 			//print("L%d\n",labels[1]);
 			lc3_lab(labels[1]);
 
+			lc3_pop(z);
 			epilogue(p,&x,&y,&yflag,&destflag);
 			break;
 
