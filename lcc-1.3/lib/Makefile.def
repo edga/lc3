@@ -49,8 +49,8 @@ RANLIB = __RANLIB__
 INSTALL_DIR = __INSTALL_DIR__
 # End of configuration block.
 
-CFLAGS  = -g -Wall
-LDFLAGS = -g
+CFLAGS  = -g -Wall ${EXTRAFLAGS}
+LDFLAGS = -g ${EXTRAFLAGS}
 LC3AS   = ./lc3as
 
 %.o: %.c

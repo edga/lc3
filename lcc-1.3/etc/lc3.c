@@ -4,12 +4,17 @@
 
 static char rcsid[] = "$Id: lc3.c,v 1.1.1.1 2004/03/24 04:37:35 sjp Exp $";
 
+#ifndef PATHSEP
+#define PATHSEP "/"
+#endif
+
+
 #ifndef LCCDIR
-#define LCCDIR "./"
+#define LCCDIR "." PATHSEP
 #endif
 
 #ifndef BASEDIR
-#define BASEDIR "./"
+#define BASEDIR "." PATHSEP
 #endif
 
 /* char *suffixes[] = { ".c", ".i", ".s", ".o", ".out", 0 }; */
@@ -27,11 +32,11 @@ extern char *concat(char *, char *);
 
 int option(char *arg) {
   	if (strncmp(arg, "-lccdir=", 8) == 0) {
-		include[0] = concat("-I", concat(&arg[8], "/include"));
-		cpp[0] = concat(&arg[8], "/install/cpp");
-		com[0] = concat(&arg[8], "/install/rcc");
-		ld[0]  = concat(&arg[8], "/install/lc3lib");
-		ld[1]  = concat(&arg[8], "/lc3lib");
+		include[0] = concat("-I", concat(&arg[8], PATHSEP "include"));
+		cpp[0] = concat(&arg[8], PATHSEP "install" PATHSEP "cpp");
+		com[0] = concat(&arg[8], PATHSEP "install" PATHSEP "rcc");
+		ld[0]  = concat(&arg[8], PATHSEP "install" PATHSEP "lc3lib");
+		ld[1]  = concat(&arg[8], PATHSEP "lc3lib");
 	} else if (strncmp(arg, "-ld=", 4) == 0)
 		ld[0] = &arg[4];
 	else return 0;

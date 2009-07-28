@@ -50,8 +50,8 @@ INSTALL_DIR = __INSTALL_DIR__
 TOP_DIR = __TOP_DIR__
 # End of configuration block.
 
-CFLAGS  = -g
-LDFLAGS = -g
+CFLAGS  = -g ${EXTRAFLAGS}
+LDFLAGS = -g ${EXTRAFLAGS}
 LC3AS   = ./lc3as
 
 %.o: %.c

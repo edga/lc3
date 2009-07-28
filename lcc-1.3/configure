@@ -5,16 +5,35 @@
 
 INSTALL_DIR=`pwd`/install
 TOP_DIR=`pwd`
-case $1 in 
+BASE_DIR=${BASE_DIR=$TOP_DIR}
+PATH_SEP=${PATH_SEP=/}
+
+for opt ; do
+case $opt in 
 	--installdir) 
-	    INSTALL_DIR=$2 ;
+	    INSTALL_DIR=$2 
+	    ;;
+	--no-cygwin) 
+	    PATH_SEP='\\\\'
+	    EXTRA_FLAGS=-mno-cygwin
+	    BASE_DIR='C:\\\\lc3'
+	    INSTALL_DIR=${BASE_DIR}${PATH_SEP}bin 
+	    ;;    
+	--basedir) 
+	    BASE_DIR=$2 
+	    INSTALL_DIR=${2}${PATH_SEP}bin 
 	    ;;
 	--help)
-	    echo "--installdir <directory in which to install>"
+	    echo "--no-cygwin <everything will be compiled without cygwin1.dll; windows paths will be used ('C:\\\\lc3')>"
+	    echo "--installdir <binary installation directory> (libraries stay at source location)"
+	    echo "--basedir <base installation directory> (binaries go to BASE/bin, libraries go to BASE/lc3lib)"
 	    echo "--help"
 	    exit
 	    ;;
 esac
+	shift ;
+done
+
 
 
 # Some binaries that we'll need, and the places that we might find them.
@@ -69,6 +88,7 @@ sed -e "s __GCC__ $gcc g" -e "s __EXE__ $EXE g"     \
     -e "s __RM__ $rm g" -e "s __RANLIB__ $ranlib g" -e "s __AR__ $ar g" \
     -e "s __CP__ $cp g" -e "s __MKDIR__ $mkdir g" -e "s __CHMOD__ $chmod g" \
     -e "s*__INSTALL_DIR__*$INSTALL_DIR*g" -e "s*__TOP_DIR__*$TOP_DIR*g" \
+    -e "s*__PATH_SEP__*$PATH_SEP*g" -e "s*__BASE_DIR__*$BASE_DIR*g" -e "s*__EXTRA_FLAGS__*$EXTRA_FLAGS*g" \
     -e "s __MAKE__ $make g" -e "s __SED__ $sed g" Makefile.def > Makefile
 
 # ./src
@@ -78,6 +98,7 @@ sed -e "s __GCC__ $gcc g" -e "s __EXE__ $EXE g"     \
     -e "s __RM__ $rm g" -e "s __RANLIB__ $ranlib g" -e "s __AR__ $ar g" \
     -e "s __CP__ $cp g" -e "s __MKDIR__ $mkdir g" -e "s __CHMOD__ $chmod g" \
     -e "s*__INSTALL_DIR__*$INSTALL_DIR*g" -e "s*__TOP_DIR__*$TOP_DIR*g" \
+    -e "s*__PATH_SEP__*$PATH_SEP*g" -e "s*__BASE_DIR__*$BASE_DIR*g" -e "s*__EXTRA_FLAGS__*$EXTRA_FLAGS*g" \
     -e "s __MAKE__ $make g" -e "s __SED__ $sed g" Makefile.def > Makefile
 cd ../cpp
 rm -f Makefile
@@ -85,6 +106,7 @@ sed -e "s __GCC__ $gcc g" -e "s __EXE__ $EXE g"     \
     -e "s __RM__ $rm g" -e "s __RANLIB__ $ranlib g" -e "s __AR__ $ar g" \
     -e "s __CP__ $cp g" -e "s __MKDIR__ $mkdir g" -e "s __CHMOD__ $chmod g" \
     -e "s*__INSTALL_DIR__*$INSTALL_DIR*g" -e "s*__TOP_DIR__*$TOP_DIR*g" \
+    -e "s*__PATH_SEP__*$PATH_SEP*g" -e "s*__BASE_DIR__*$BASE_DIR*g" -e "s*__EXTRA_FLAGS__*$EXTRA_FLAGS*g" \
     -e "s __MAKE__ $make g" -e "s __SED__ $sed g" Makefile.def > Makefile
 cd ../lib
 rm -f Makefile
@@ -92,6 +114,7 @@ sed -e "s __GCC__ $gcc g" -e "s __EXE__ $EXE g"     \
     -e "s __RM__ $rm g" -e "s __RANLIB__ $ranlib g" -e "s __AR__ $ar g" \
     -e "s __CP__ $cp g" -e "s __MKDIR__ $mkdir g" -e "s __CHMOD__ $chmod g" \
     -e "s*__INSTALL_DIR__*$INSTALL_DIR*g" -e "s*__TOP_DIR__*$TOP_DIR*g" \
+    -e "s*__PATH_SEP__*$PATH_SEP*g" -e "s*__BASE_DIR__*$BASE_DIR*g" -e "s*__EXTRA_FLAGS__*$EXTRA_FLAGS*g" \
     -e "s __MAKE__ $make g" -e "s __SED__ $sed g" Makefile.def > Makefile
 cd ../lburg
 rm -f Makefile
@@ -99,6 +122,7 @@ sed -e "s __GCC__ $gcc g" -e "s __EXE__ $EXE g"     \
     -e "s __RM__ $rm g" -e "s __RANLIB__ $ranlib g" -e "s __AR__ $ar g" \
     -e "s __CP__ $cp g" -e "s __MKDIR__ $mkdir g" -e "s __CHMOD__ $chmod g" \
     -e "s*__INSTALL_DIR__*$INSTALL_DIR*g" -e "s*__TOP_DIR__*$TOP_DIR*g" \
+    -e "s*__PATH_SEP__*$PATH_SEP*g" -e "s*__BASE_DIR__*$BASE_DIR*g" -e "s*__EXTRA_FLAGS__*$EXTRA_FLAGS*g" \
     -e "s __MAKE__ $make g" -e "s __SED__ $sed g" Makefile.def > Makefile
 cd ../etc
 rm -f Makefile
@@ -106,6 +130,7 @@ sed -e "s __GCC__ $gcc g" -e "s __EXE__ $EXE g"     \
     -e "s __RM__ $rm g" -e "s __RANLIB__ $ranlib g" -e "s __AR__ $ar g" \
     -e "s __CP__ $cp g" -e "s __MKDIR__ $mkdir g" -e "s __CHMOD__ $chmod g" \
     -e "s*__INSTALL_DIR__*$INSTALL_DIR*g" -e "s*__TOP_DIR__*$TOP_DIR*g" \
+    -e "s*__PATH_SEP__*$PATH_SEP*g" -e "s*__BASE_DIR__*$BASE_DIR*g" -e "s*__EXTRA_FLAGS__*$EXTRA_FLAGS*g" \
     -e "s __MAKE__ $make g" -e "s __SED__ $sed g" Makefile.def > Makefile
 cd ../lc3pp
 rm -f Makefile
@@ -113,4 +138,5 @@ sed -e "s __GCC__ $gcc g" -e "s __EXE__ $EXE g"     \
     -e "s __RM__ $rm g" -e "s __RANLIB__ $ranlib g" -e "s __AR__ $ar g" \
     -e "s __CP__ $cp g" -e "s __MKDIR__ $mkdir g" -e "s __CHMOD__ $chmod g" \
     -e "s*__INSTALL_DIR__*$INSTALL_DIR*g" -e "s*__TOP_DIR__*$TOP_DIR*g" \
+    -e "s*__PATH_SEP__*$PATH_SEP*g" -e "s*__BASE_DIR__*$BASE_DIR*g" -e "s*__EXTRA_FLAGS__*$EXTRA_FLAGS*g" \
     -e "s __MAKE__ $make g" -e "s __SED__ $sed g" Makefile.def > Makefile

@@ -3,16 +3,24 @@
 # Parse the arguments...
 
 INSTALL_DIR=`pwd`
-case $1 in 
+for opt ; do
+case $opt in 
 	--installdir) 
 	    INSTALL_DIR=$2 ;
 	    ;;
+	--no-cygwin) 
+       NO_CYGWIN=1
+	    EXTRA_FLAGS=-mno-cygwin
+	    ;;    
 	--help)
+	    echo "--no-cygwin Compile using MinGW toolchain inside cygwin"
 	    echo "--installdir <directory in which to install>"
 	    echo "--help"
 	    exit
 	    ;;
 esac
+	shift ;
+done
 
 
 # Some binaries that we'll need, and the places that we might find them.
@@ -115,5 +123,6 @@ sed -e "s __GCC__ $gcc g" -e "s __FLEX__ $flex g" -e "s __EXE__ $EXE g"     \
     -e "s __RLIPATH__ $RLIPATH g" -e "s*__INSTALL_DIR__*$INSTALL_DIR*g"     \
     -e "s __WISH__ $wish g" -e "s __SED__ $sed g"                           \
     -e "s!__CODE_FONT__!$CODE_FONT!g" -e "s!__BUTTON_FONT__!$BUTTON_FONT!g" \
+    -e "s*__PATH_SEP__*$PATH_SEP*g" -e "s*__NO_CYGWIN__*$NO_CYGWIN*g" -e "s*__EXTRA_FLAGS__*$EXTRA_FLAGS*g" \
     -e "s!__CONSOLE_FONT__!$CONSOLE_FONT!g" Makefile.def > Makefile
 

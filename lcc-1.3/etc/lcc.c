@@ -12,6 +12,10 @@ static char rcsid[] = "$Id: lcc.c,v 1.1.1.1 2004/03/24 04:37:35 sjp Exp $";
 #include <ctype.h>
 #include <signal.h>
 
+#ifndef PATHSEP
+#define PATHSEP "/"
+#endif
+
 #ifndef TEMPDIR
 #define TEMPDIR "/tmp"
 #endif
@@ -835,7 +839,7 @@ int suffix(char *name, char *tails[], int n) {
 /* tempname - generate a temporary file name in tempdir with given suffix */
 char *tempname(char *suffix) {
 	static int n;
-	char *name = stringf("%s/lcc%d%d%s", tempdir, getpid(), n++, suffix);
+	char *name = stringf("%s" PATHSEP "lcc%d%d%s", tempdir, getpid(), n++, suffix);
 
 	if (strstr(com[1], "win32") != NULL)
 		name = replace(name, '/', '\\');

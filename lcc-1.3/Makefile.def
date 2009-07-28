@@ -47,10 +47,11 @@ MAKE = __MAKE__
 AR = __AR__
 RANLIB = __RANLIB__
 INSTALL_DIR = __INSTALL_DIR__
+export EXTRAFLAGS = __EXTRA_FLAGS__
 # End of configuration block.
 
-CFLAGS  = -g -Wall
-LDFLAGS = -g
+CFLAGS  = -g -Wall ${EXTRAFLAGS}
+LDFLAGS = -g ${EXTRAFLAGS}
 LC3AS   = ./lc3as
 
 ALL: dist_lcc dist_cpp dist_lc3pp dist_rcc

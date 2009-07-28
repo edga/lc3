@@ -47,11 +47,12 @@ MAKE = __MAKE__
 AR = __AR__
 RANLIB = __RANLIB__
 LCCDIR = __INSTALL_DIR__
-BASEDIR = __TOP_DIR__
+BASEDIR = __BASE_DIR__
+PATHSEP = __PATH_SEP__
 # End of configuration block.
 
-CFLAGS  = -g -DLCCDIR='"${LCCDIR}/"' -DBASEDIR='"${BASEDIR}/"'
-LDFLAGS = -g
+CFLAGS  = -g -DLCCDIR='"${LCCDIR}${PATHSEP}"' -DPATHSEP='"${PATHSEP}"' -DBASEDIR='"${BASEDIR}${PATHSEP}"' ${EXTRAFLAGS}
+LDFLAGS = -g ${EXTRAFLAGS}
 LC3AS   = ./lc3as
 
 %.o: %.c

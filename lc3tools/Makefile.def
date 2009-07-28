@@ -52,13 +52,20 @@ INSTALL_DIR = __INSTALL_DIR__
 CODE_FONT = __CODE_FONT__
 BUTTON_FONT = __BUTTON_FONT__
 CONSOLE_FONT = __CONSOLE_FONT__
+EXTRAFLAGS = __EXTRA_FLAGS__
+NO_CYGWIN = __NO_CYGWIN__
 # End of configuration block.
 
-CFLAGS  = -g -Wall
-LDFLAGS = -g
+CFLAGS  = -g -Wall ${EXTRAFLAGS}
+LDFLAGS = -g ${EXTRAFLAGS}
 LC3AS   = ./lc3as
 
+
+ifeq (${NO_CYGWIN},1)
+ALL: dist_lc3as dist_lc3convert
+else
 ALL: dist_lc3as dist_lc3convert dist_lc3sim dist_lc3sim-tk
+endif
 
 clean: dist_lc3as_clean dist_lc3convert_clean dist_lc3sim_clean \
 	dist_lc3sim-tk_clean
