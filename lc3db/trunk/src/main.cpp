@@ -75,7 +75,7 @@ int main(int argc, char **argv)
   }
   path_ptr = strdup(loc_path_ptr);
 
-  while (-1 != (ch = getopt_long(argc, argv, "c:r:EDI", longopts, &index))) {
+  while (-1 != (ch = getopt_long_only(argc, argv, "c:r:EDI", longopts, &index))) {
     switch (ch) {
     case 'f':
       gui_mode = true;
@@ -165,7 +165,7 @@ int main(int argc, char **argv)
 	  }
 	}
 	setenv("DDD_STATE", buffer, 1);
-	sprintf(sys_string, "/lusr/X11R6/bin/ddd --debugger %s/bin/lc3db", path_ptr);
+	sprintf(sys_string, "ddd --debugger %s/bin/lc3db", path_ptr);
 	printf("%s\n", sys_string);
 	return system(sys_string);
       }
