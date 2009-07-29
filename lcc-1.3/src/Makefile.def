@@ -54,16 +54,16 @@ CFLAGS  = -g ${EXTRAFLAGS}
 LDFLAGS = -g ${EXTRAFLAGS}
 LC3AS   = ./lc3as
 
-GENENARED_C = dagcheck.c alpha.c sparc.c mips.c x86.c x86linux.c lc3.c
+GENENARED_C = dagcheck.c lc3.c lc3dtu.c # alpha.c sparc.c mips.c x86.c x86linux.c
 
-librcc_OBJECTS = alloc.o bind.o dag.o dagcheck.o decl.o \
+librcc_OBJECTS = alloc.o bind.o dag.o decl.o \
 	enode.o error.o expr.o event.o \
 	init.o inits.o input.o lex.o list.o \
 	main.o output.o prof.o profio.o simp.o stmt.o \
 	string.o sym.o \
 	trace.o tree.o types.o null.o symbolic.o gen.o \
-	bytecode.o alpha.o mips.o lc3.o sparc.o stab.o \
-	x86.o x86linux.o
+	bytecode.o stab.o \
+	$(GENENARED_C:.c=.o)
 
 %.o: %.c
 	${GCC} -c ${CFLAGS} -o $@ $<

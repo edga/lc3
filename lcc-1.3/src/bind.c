@@ -2,12 +2,7 @@
 #undef yy
 #define yy \
 xx(lc3,    lc3IR) \
-xx(alpha/osf,    alphaIR) \
-xx(mips/irix,    mipsebIR) \
-xx(sparc/sun,    sparcIR) \
-xx(sparc/solaris,solarisIR) \
-xx(x86/win32,    x86IR) \
-xx(x86/linux,    x86linuxIR) \
+xx(lc3dtu,    lc3dtuIR) \
 xx(symbolic/osf, symbolic64IR) \
 xx(symbolic/irix,symbolicIR) \
 xx(symbolic,     symbolicIR) \

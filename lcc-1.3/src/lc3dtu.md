@@ -1441,7 +1441,7 @@ static void stabsym(Symbol p) {
         (*IR->stabline)(&p->src);
 }
 
-Interface lc3IR = {
+Interface lc3dtuIR = {
 	1, 1, 1,  /* char */
 	1, 1, 1,  /* short */
 	1, 1, 1,  /* int */

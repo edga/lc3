@@ -54,7 +54,7 @@ CFLAGS  = -g -Wall ${EXTRAFLAGS}
 LDFLAGS = -g ${EXTRAFLAGS}
 LC3AS   = ./lc3as
 
-ALL: dist_lcc dist_cpp dist_lc3pp dist_rcc
+all: dist_lcc dist_cpp dist_lc3pp dist_rcc
 
 clean: dist_lcc_clean dist_cpp_clean dist_lc3pp_clean dist_rcc_clean 
 
@@ -66,7 +66,7 @@ distclean: clean clear
 cleanInstall:
 	-${RM} -rf ${INSTALL_DIR}
 
-install: ALL
+install: all
 	${MKDIR} -p ${INSTALL_DIR}
 	-${CP} -f src/rcc${EXE} etc/lcc${EXE} cpp/cpp${EXE} lc3pp/lc3pp${EXE} \
 		COPYING NO_WARRANTY README test/regression/Makefile test/regression/fig16.14.c ${INSTALL_DIR}
