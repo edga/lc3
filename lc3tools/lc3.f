@@ -71,6 +71,38 @@ enum opcode_t {
     /* directives */
     OP_BLKW, OP_END, OP_ORIG, 
 
+/************************************************************************/
+/*		DTU extensions						*/
+/* Syntactic sugar:							*/
+/*   NOP:       alias to BR with nzp cleared (0x0000 is used here)	*/
+/*   .BLKWTO:   version of .BLKW which reserves memory untill offset    */
+/*              instead of reserving count words                       	*/
+/*									*/
+/* Immediate shifts:							*/
+/*   "SLL/SRA <imm4u>" are implemented in unused bits of ADD/AND:	*/
+/* 	SLL: 0001.dr.sr1.01.imm4u					*/
+/* 	SRA: 0101.dr.sr1.01.imm4u					*/
+/*									*/
+/* Extra RRR format (3 reg) arithmetics:				*/
+/*   SLL,SRA,DIV,MOD and MUL implemented in reserved instruction:	*/
+/*	     1101.dr.sr1.func.sr2					*/
+/*	where 3bit func field is 0,1,2... for SLL,SRA,DIV,MOD and MUL	*/
+/*									*/
+
+    OP_SLL,	/* Shift Left Logical					*/
+    OP_SRA,	/* Shift Right Arithmetic				*/
+    OP_DIV,	/* Divide						*/
+    OP_MOD,	/* Remainder						*/
+    OP_MUL,	/* Multiply						*/
+
+    /* pseudo-ops */
+    OP_NOP,	/* No operation						*/
+    
+    /* directives */
+    OP_BLKWTO,
+/*									*/
+/************************************************************************/
+
     NUM_OPS
 };
 
@@ -90,6 +122,22 @@ static const char* const opnames[NUM_OPS] = {
 
     /* directives */
     ".BLKW", ".END", ".ORIG",
+
+/************************************************/
+/*		DTU extensions			*/
+    "SLL",	/* Shift Left Logical		*/
+    "SRA",	/* Shift Right Arithmetic	*/
+    "DIV",	/* Divide			*/
+    "MOD",	/* Remainder			*/
+    "MUL",	/* Multiply			*/
+
+    /* pseudo-ops */
+    "NOP",	/* No operation			*/
+ 
+    /* directives */
+    ".BLKWTO",  /* Fill value untill address    */
+/*						*/
+/************************************************/
 };
 
 typedef enum ccode_t ccode_t;
@@ -148,6 +196,25 @@ static const int op_format_ok[NUM_OPS] = {
     0x040, /* .BLKW: I format only         */
     0x200, /* .END: no operands allowed    */
     0x040  /* .ORIG: I format only         */
+
+/************************************************/
+/*		DTU extensions			*/
+    ,
+    0x003, /* SLL: RRR format (in RESERV opcode)*/
+	   /*      RRI format (in ADD opcode)   */
+    0x003, /* SRA: RRR format (in RESERV opcode)*/
+	   /*      RRI format (in AND opcode)   */
+    0x001, /* DIV: RRR format only		*/
+    0x001, /* MOD: RRR format only		*/
+    0x001, /* MUL: RRR format only		*/
+
+    /* pseudo-ops */
+    0x200, /* NOP: no operands allowed		*/
+ 
+    /* directives */
+    0x040  /* .BLKWTO: I format only            */
+/*						*/
+/************************************************/
 };
 
 typedef enum pre_parse_t pre_parse_t;
@@ -283,6 +350,22 @@ RET       {inst.op = OP_RET;   BEGIN (ls_operands);}
 \.BLKW    {inst.op = OP_BLKW; BEGIN (ls_operands);}
 \.END     {saw_end = 1;       BEGIN (ls_finished);}
 \.ORIG    {inst.op = OP_ORIG; BEGIN (ls_operands);}
+
+ /***********************************************/
+ /*		DTU extensions			*/
+SLL       {inst.op = OP_SLL;   BEGIN (ls_operands);}
+SRA       {inst.op = OP_SRA;   BEGIN (ls_operands);}
+DIV       {inst.op = OP_DIV;   BEGIN (ls_operands);}
+MOD       {inst.op = OP_MOD;   BEGIN (ls_operands);}
+MUL       {inst.op = OP_MUL;   BEGIN (ls_operands);}
+
+    /* pseudo-ops */
+NOP       {inst.op = OP_NOP;   BEGIN (ls_operands);}
+
+    /* directives */
+\.BLKWTO  {inst.op = OP_BLKWTO; BEGIN (ls_operands);}
+ /*						*/
+ /***********************************************/
 
     /* rules for operand formats */
 <ls_operands>{O_RRR} {generate_instruction (O_RRR, yytext); BEGIN (0);}
@@ -494,7 +577,7 @@ line_ignored ()
 }
 
 static int
-read_val (const char* s, int* vptr, int bits)
+read_raw_val (const char* s, long * vptr)
 {
     char* trash;
     long v;
@@ -519,13 +602,75 @@ read_val (const char* s, int* vptr, int bits)
 
     if (0x10000 > v && 0x8000 <= v)
         v |= -65536L;   /* handles 64-bit longs properly */
+
+    *vptr = v;
+    return 0;
+}
+
+/* Read value.
+   Format (signed/unsigned) is irrelevant as long value fits in size specified
+   */
+static int
+read_val (const char* s, int* vptr, int bits)
+{
+    long v;
+    if (read_raw_val(s, &v))
+	return -1;
+
     if (v < -(1L << (bits - 1)) || v >= (1L << bits)) {
-    fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
-    num_errors++;
-    return -1;
+        fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+        num_errors++;
+        return -1;
     }
     if ((v & (1UL << (bits - 1))) != 0)
-    v |= ~((1UL << bits) - 1);
+        v |= ~((1UL << bits) - 1);
+    *vptr = v;
+    return 0;
+}
+
+/* Read value.
+   It must fit into signed integer of specified size.
+   */
+static int
+read_signed_val (const char* s, int* vptr, int bits)
+{
+    long v;
+    if (read_raw_val(s, &v))
+	return -1;
+
+    if (v < -(1L << (bits - 1)) || v >= (1L << (bits-1))) {
+        fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+        num_errors++;
+        return -1;
+    }
+    if ((v & (1UL << (bits - 1))) != 0)
+        v |= ~((1UL << bits) - 1);
+    *vptr = v;
+    return 0;
+}
+
+/* Read value.
+   It must fit into unsigned integer of specified size.
+   */
+static int
+read_unsigned_val (const char* s, int* vptr, int bits)
+{
+    long v;
+    if (read_raw_val(s, &v))
+	return -1;
+
+    if (v < 0) {
+	fprintf (stderr, "%3d: unsigned constant expected\n", line_num);
+	num_errors++;
+	return -1;
+    }
+
+    if (v >= (1L << (bits))) {
+        fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+        num_errors++;
+        return -1;
+    }
+
     *vptr = v;
     return 0;
 }
@@ -677,7 +822,7 @@ generate_instruction (operands_t operands, const char* opstr)
     if ((pre_parse[operands] & PP_R3) != 0)
         r3 = o3[1] - '0';
     if ((pre_parse[operands] & PP_I2) != 0)
-        (void)read_val (o2, &val, 9);
+        (void)read_signed_val (o2, &val, 9);
     if ((pre_parse[operands] & PP_L2) != 0)
         val = find_label (o2, 9);
 
@@ -687,7 +832,7 @@ generate_instruction (operands_t operands, const char* opstr)
 	    if (operands == O_RRI) {
 	    	/* Check or read immediate range (error in first pass
 		   prevents execution of second, so never fails). */
-	        (void)read_val (o3, &val, 5);
+	        (void)read_signed_val (o3, &val, 5);
 		write_value (0x1020 | (r1 << 9) | (r2 << 6) | (val & 0x1F));
 	    } else
 		write_value (0x1000 | (r1 << 9) | (r2 << 6) | r3);
@@ -696,14 +841,14 @@ generate_instruction (operands_t operands, const char* opstr)
 	    if (operands == O_RRI) {
 	    	/* Check or read immediate range (error in first pass
 		   prevents execution of second, so never fails). */
-	        (void)read_val (o3, &val, 5);
+	        (void)read_signed_val (o3, &val, 5);
 		write_value (0x5020 | (r1 << 9) | (r2 << 6) | (val & 0x1F));
 	    } else
 		write_value (0x5000 | (r1 << 9) | (r2 << 6) | r3);
 	    break;
 	case OP_BR:
 	    if (operands == O_I)
-	        (void)read_val (o1, &val, 9);
+	        (void)read_signed_val (o1, &val, 9);
 	    else /* O_L */
 	        val = find_label (o1, 9);
 	    write_value (inst.ccode | (val & 0x1FF));
@@ -713,7 +858,7 @@ generate_instruction (operands_t operands, const char* opstr)
 	    break;
 	case OP_JSR:
 	    if (operands == O_I)
-	        (void)read_val (o1, &val, 11);
+	        (void)read_signed_val (o1, &val, 11);
 	    else /* O_L */
 	        val = find_label (o1, 11);
 	    write_value (0x4800 | (val & 0x7FF));
@@ -728,7 +873,7 @@ generate_instruction (operands_t operands, const char* opstr)
 	    write_value (0xA000 | (r1 << 9) | (val & 0x1FF));
 	    break;
 	case OP_LDR:
-	    (void)read_val (o3, &val, 6);
+	    (void)read_signed_val (o3, &val, 6);
 	    write_value (0x6000 | (r1 << 9) | (r2 << 6) | (val & 0x3F));
 	    break;
 	case OP_LEA:
@@ -747,11 +892,11 @@ generate_instruction (operands_t operands, const char* opstr)
 	    write_value (0xB000 | (r1 << 9) | (val & 0x1FF));
 	    break;
 	case OP_STR:
-	    (void)read_val (o3, &val, 6);
+	    (void)read_signed_val (o3, &val, 6);
 	    write_value (0x7000 | (r1 << 9) | (r2 << 6) | (val & 0x3F));
 	    break;
 	case OP_TRAP:
-	    (void)read_val (o1, &val, 8);
+	    (void)read_unsigned_val (o1, &val, 8);
 	    write_value (0xF000 | (val & 0xFF));
 	    break;
 
@@ -819,6 +964,60 @@ generate_instruction (operands_t operands, const char* opstr)
         case OP_END:
 	case NUM_OPS:
 	    break;
+
+/************************************************/
+/*		DTU extensions			*/
+    	/* Shift Left Logical */
+	case OP_SLL:
+	    if (operands == O_RRI) {
+	        (void)read_unsigned_val (o3, &val, 4);
+		write_value (0x1010 | (r1 << 9) | (r2 << 6) | (val & 0xF));
+	    } else
+		write_value (0xD000 | (r1 << 9) | (r2 << 6) | r3);
+	    break;
+
+	/* Shift Right Arithmetic */
+	case OP_SRA:
+	    if (operands == O_RRI) {
+	        (void)read_unsigned_val (o3, &val, 4);
+		write_value (0x5010 | (r1 << 9) | (r2 << 6) | (val & 0xF));
+	    } else
+		write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_SRA-OP_SLL) << 3) | r3);
+	    break;
+
+	/* Divide */
+	case OP_DIV:
+	    write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_DIV-OP_SLL) << 3) | r3);
+	    break;
+
+	/* Remainder */
+	case OP_MOD:
+	    write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_MOD-OP_SLL) << 3) | r3);
+	    break;
+
+	/* Multiply */
+	case OP_MUL:
+	    write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_MUL-OP_SLL) << 3) | r3);
+	    break;
+
+	/* pseudo-ops */
+	case OP_NOP:  write_value (0x0000); break;
+
+        /* directives */
+        case OP_BLKWTO:
+	    (void)read_val (o1, &val, 16);
+	    val &= 0xFFFF;
+            if (code_loc > val) {
+                fprintf (stderr, "%3d: requested address is in the past\n", line_num);
+                num_errors++;
+            } else {
+	        while (code_loc < val) {
+                    write_value (0x0000);
+                }
+            }
+	    break;
+/*						*/
+/************************************************/
     }
     new_inst_line ();
 }
