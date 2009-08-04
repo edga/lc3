@@ -1,0 +1,83 @@
+################################################################################
+# Common part of makefiles for compiling and running LC3 tests
+################################################################################
+#  # Usage:
+#  BASEDIR=../
+#  include $(BASEDIR)Make.common
+
+
+#######################
+## Command definitions
+
+#On some systems might need to use: ECHO=echo -e
+ECHO=echo -e
+
+SED=sed
+# On SUN use gsed
+#SED=gsed
+
+LCC=lcc
+LCAS=lc3as
+LCSIM=lc3sim
+
+PYTHON?=/cygdrive/c/Python26/python
+
+lcc_stat=$(BASEDIR)sh/lcc_stat
+lcc_split=$(BASEDIR)sh/lcc_split
+
+RUN_FPGA=$(PYTHON) 'c:\lc3\bin\serial_cat.py' -b $(SERIAL_BAUD)
+CROP_OUTPUT_FPGA=$(SED) '0,/^--- Starting user code at x3000... ---/ d; /^--- halting the LC-3 ---/,$$ d; /^ *$$/ d'
+
+RUN_SIM=$(ECHO) "option flush off\ncontinue\nquit" | $(LCSIM)
+CROP_OUTPUT_SIM=$(SED) -n '/^(lc3sim)/,/^--- halting the LC-3 ---/ { /^ *$$/ d; /^(lc3sim) Will not flush the console/ d;  s/^(lc3sim) //; /^--- halting the LC-3/ d;  p } '
+
+
+##############**###########
+## Additional pattern rules
+
+%.lcc : %.c
+	$(LCC) -c $<
+
+%.asm : %.c
+	$(LCC) -L $< -o $@
+
+%.obj %.sym %.ser : %.asm
+	$(LCAS) $<
+# don't delete *.asm files after compilation
+.PRECIOUS: %.asm
+
+%.exe: %.c
+	$(CC) -o $@ $<
+
+log.%.host: %.exe
+	@echo 'Running native version of code (output stored in "$@")'
+	./$< > $@
+# don't delete compiled host executable after running it
+.PRECIOUS: %.exe
+
+ifdef TEST_FPGA
+
+log.%.lc3: %.ser
+	@echo 'Running LC3 version of code (output stored in "$@")'
+	$(RUN_FPGA) -O $< -s </dev/null > $@
+	$(CROP_OUTPUT_FPGA) -i $@
+
+else # use simulator
+
+log.%.lc3: %.obj
+	$(RUN_SIM) $< >$@ 
+	$(CROP_OUTPUT_SIM) -i $@
+#log.%.lc3: %.obj
+#	$(RUN_SIM) -fileio /dev/null $@ $<
+#	$(CROP_OUTPUT_SIM) -i $@
+
+endif
+# don't delete *.obj files after compilation
+.PRECIOUS: %.obj %.ser
+
+%.test: log.%.host log.%.lc3
+	diff -uw $^ > $@
+# don't delete log files after compilation
+.PRECIOUS: log.%.host log.%.lc3
+
+
