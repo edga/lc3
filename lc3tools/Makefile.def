@@ -62,9 +62,9 @@ LC3AS   = ./lc3as
 
 
 ifeq (${NO_CYGWIN},1)
-ALL: dist_lc3as dist_lc3convert
+all: dist_lc3as dist_lc3convert
 else
-ALL: dist_lc3as dist_lc3convert dist_lc3sim dist_lc3sim-tk
+all: dist_lc3as dist_lc3convert dist_lc3sim dist_lc3sim-tk
 endif
 
 clean: dist_lc3as_clean dist_lc3convert_clean dist_lc3sim_clean \
@@ -76,7 +76,7 @@ clear: dist_lc3as_clear dist_lc3convert_clear dist_lc3sim_clear \
 distclean: clean clear
 	${RM} -f Makefile
 
-install: ALL
+install: all
 	${MKDIR} -p ${INSTALL_DIR}
 	-${CP} -f lc3as${EXE} lc3convert${EXE} lc3sim${EXE} lc3os.obj \
 		lc3os.sym lc3sim-tk COPYING NO_WARRANTY README ${INSTALL_DIR}
