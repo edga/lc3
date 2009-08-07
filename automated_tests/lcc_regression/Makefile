@@ -4,9 +4,12 @@ PYTHON=/cygdrive/c/Python26/python
 SERIAL_BAUD=115200
 #SERIAL_BAUD=19200
 
+
 # Use common file
 BASEDIR=../
 include $(BASEDIR)Make.common
+
+LCC=lcc -target=lc3dtu
 
 SRC=$(wildcard *.c)
 ASM=$(SRC:.c=.asm)

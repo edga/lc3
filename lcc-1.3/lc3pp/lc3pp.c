@@ -352,37 +352,37 @@ int check_ldr(const char *line, int reg_num, int *poffset)
       return sscanf(line, " [lL][dD][rR] [rR]%d, [rR]%d, #%d", &rd, &rb, poffset)==3
                 && rd == rb && rd == reg_num;
    */
-  
+
    const char *c = line;
    char *trash;
    long off;
-  
+
    /* skip leading spaces */
    while (isspace(*c)) c++;
-   
+
    /* check for LDR */
    if (*c != 'l' && *c != 'L') return 0; c++;
    if (*c != 'd' && *c != 'D') return 0; c++;
    if (*c != 'r' && *c != 'R') return 0; c++;
 
    while (isspace(*c)) c++;
-   
+
    /* check for first R<reg_num> */
    if (*c != 'r' && *c != 'R') return 0; c++;
    if (*c != reg_num+'0') return 0; c++;
-   
+
    while (isspace(*c)) c++;
    if (*c != ',') return 0; c++;
    while (isspace(*c)) c++;
-   
+
    /* check for second R<reg_num> */
    if (*c != 'r' && *c != 'R') return 0; c++;
    if (*c != reg_num+'0') return 0; c++;
-   
+
    while (isspace(*c)) c++;
    if (*c != ',') return 0; c++;
    while (isspace(*c)) c++;
-   
+
    /* check for offset */
    if (*c == 'x' || *c == 'X')
       off = strtol (c + 1, &trash, 16);
@@ -392,7 +392,7 @@ int check_ldr(const char *line, int reg_num, int *poffset)
 	   off = strtol (c, &trash, 10);
    }
    if (c == trash) return 0;
-   
+
    *poffset = off;
    return 1;
 }
@@ -646,7 +646,7 @@ main (int argc, char *argv[])
             offset+=g_vars[i].size;
          }
 
-         
+
          /* See if offset of global variable is needed just to load that
           * variable.
           * If next instruction has form:
@@ -660,12 +660,12 @@ main (int argc, char *argv[])
          if(with_LDR) {
             offset += i;
          }
-         
+
          /* Print a user friendly comment */
          if(with_LDR)
-            fprintf(output_file, "; LD R%d, %s\t;GLOB:%d\n", reg_num, var_name, offset);
+            fprintf(output_file, ";<ld R%d, %s\t;GLOB:%d>\n", reg_num, var_name, offset);
          else
-            fprintf(output_file, "; LEA R%d, %s\t;GLOB:%d\n", reg_num, var_name, offset);
+            fprintf(output_file, ";<lea R%d, %s\t;GLOB:%d>\n", reg_num, var_name, offset);
 
          /* Load <offset> into R<reg_num> (possibly followed by LDR) */
          i=offset;
@@ -727,16 +727,16 @@ main (int argc, char *argv[])
                   fprintf(output_file, "LDR R%d, R%d, #0\n", reg_num, reg_num);
             }
          }
-         
+
          if (!with_LDR) {
-            fprintf(output_file, ";\tend LEA\n");
-            
+            fprintf(output_file, ";</lea>\n");
+
             /* The extra line we have read was not the LDR, so we need handle it.
              *   We can't just print it, because it might be one of directives. */
             goto handle_line;
          }
          else
-            fprintf(output_file, ";\tend LD\n");
+            fprintf(output_file, ";</ld>\n");
       }
    }
 
@@ -756,7 +756,7 @@ main (int argc, char *argv[])
 
    free(curr_line); free(tmp_line); free(var_name);
    free(cwd);
-   for(i=0; i<=g_num; i++) 
+   for(i=0; i<=g_num; i++)
       free(g_vars[i].name);
    free(g_vars);
    for(i=0; i<link.gi; i++)
@@ -771,12 +771,12 @@ main (int argc, char *argv[])
 /*********************************************************************
  * Readline
  *  inputs: file descriptor, ptr to char ptr, length of this buf
- *  Reads one line from the current place in the File, if the buffer is 
+ *  Reads one line from the current place in the File, if the buffer is
  *  not large enough, then realloc is used to double its size
  *  *****************************************************************/
 
-void 
-Readline(FILE* file, char** buf, int* len) 
+void
+Readline(FILE* file, char** buf, int* len)
 {
    int i=0;
    for(i=0; !feof(file); i++) {
@@ -796,8 +796,8 @@ Readline(FILE* file, char** buf, int* len)
  *  inputs: destination buffer, and source buffer
  *  Reads one word from 'line' and copies it into 'buf'
  *  *****************************************************************/
-int 
-Getword(char* buf, char* line) 
+int
+Getword(char* buf, char* line)
 {
    int i=0;
    while(line[i++] != '\0' && line[i] != ' ');

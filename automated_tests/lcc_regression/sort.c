@@ -1,12 +1,23 @@
-int nn[] = {10, 32, -1, 567, 3, 18, 1, -51, 789, 0};
+short nn[] = {10, 32, -1, 567, 3, 18, 1, -51, 789, 1};
+short foo[] = { 1, 2, 3, 4, 5 };
 
 main() {
 	int i;
 
-	sort(nn, (sizeof nn)/(sizeof nn[0]));
+	//sort(nn, (sizeof nn)/(sizeof nn[0]));
 	for (i = 0; i < (sizeof nn)/(sizeof nn[0]); i++) {
-		putd(nn[i]);
-		putchar('\n');
+     putd(nn[i]);
+     putchar('\n');
+     //printf("%d/10=%d\n;\n %d%%10=%d\n;\n", nn[i], nn[i]/10, nn[i], nn[i]%10);
+     //printf("%d*%d=%hd\n;\n", nn[i], nn[i+1], nn[i]*nn[i+1]);
+     //printf("%d*%d=%hd\n;\n", nn[i], nn[i+2], nn[i]*nn[i+2]);
+     //printf("%d*%d=%hd\n;\n", nn[i], nn[i+3], nn[i]*nn[i+3]);
+     //printf("%d/%d=%hd\n;\n", nn[i], nn[i+1], nn[i]/nn[i+1]);
+     //printf("%d/%d=%hd\n;\n", nn[i], nn[i+2], nn[i]/nn[i+2]);
+     //printf("%d/%d=%hd\n;\n", nn[i], nn[i+3], nn[i]/nn[i+3]);
+     //printf("%d%%%d=%hd\n;\n", nn[i], nn[i+1], nn[i]%nn[i+1]);
+     //printf("%d%%%d=%hd\n;\n", nn[i], nn[i+2], nn[i]%nn[i+2]);
+     //printf("%d%%%d=%hd\n;\n", nn[i], nn[i+3], nn[i]%nn[i+3]);
 	}
 	return 0;
 }

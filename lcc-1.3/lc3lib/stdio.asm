@@ -11,6 +11,7 @@ PRINTF_C .FILL -99
 PRINTF_D .FILL -100
 PRINTF_S .FILL -115
 PRINTF_B .FILL -98
+PRINTF_H .FILL -104
 PRINTF_O .FILL -111
 PRINTF_X .FILL -120
 PRINTF_ASCII .FILL 48 		;postive ascii value of '0'
@@ -23,12 +24,12 @@ PRINTF_ASCII .FILL 48 		;postive ascii value of '0'
 .FILL 55
 .FILL 56
 .FILL 57
-.FILL 65        ;A
-.FILL 66
-.FILL 67
-.FILL 68
-.FILL 69
-.FILL 70
+.FILL x61    ; a			65        ;A
+.FILL x62    ;  			66
+.FILL x63    ;  			67
+.FILL x64    ;  			68
+.FILL x65    ;  			69
+.FILL x66    ;  			70
 PRINTF_MINUS .FILL 45  
 PRINTF_BUF .BLKW 18
  
@@ -61,6 +62,16 @@ BRnp PRINTF_CHAR
 
 ADD R4, R4, #1
 LDR R0, R4, #0
+;is it %h?      ; should ommit it because LC3 sizeof(int)==sizeof(short)
+ADD R2, R0, #0
+LD R3, PRINTF_H
+ADD R2, R2, R3
+BRnp PRINTF_CHECKCHAR
+
+ADD R4, R4, #1  ; check next char
+LDR R0, R4, #0
+
+PRINTF_CHECKCHAR
 ;is it %c?
 ADD R2, R0, #0
 LD R3, PRINTF_C
@@ -131,12 +142,11 @@ PRINTF_CHECKBIN
 ADD R2, R0, #0
 LD R7, PRINTF_B
 ADD R2, R2, R7
-BRnp PRINTF_ERROR
+BRnp PRINTF_CHAR    ; Unknown character, print it verbatim 
 
 AND R2, R2, #0
 ADD R2, R2, #-2		;going to divide by 10 by using sub loop
 ;BRnzp PRINTF_NUM
-
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;%d

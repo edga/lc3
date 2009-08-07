@@ -6,11 +6,12 @@ INSTALL_DIR=`pwd`
 for opt ; do
 case $opt in 
 	--installdir) 
-	    INSTALL_DIR=$2 ;
+	    INSTALL_DIR=$2 
 	    ;;
 	--no-cygwin) 
        NO_CYGWIN=1
 	    EXTRA_FLAGS=-mno-cygwin
+	    INSTALL_DIR=C:\\\\lc3\\\\bin 
 	    ;;    
 	--help)
 	    echo "--no-cygwin Compile using MinGW toolchain inside cygwin"

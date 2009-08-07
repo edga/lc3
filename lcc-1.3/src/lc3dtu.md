@@ -72,7 +72,8 @@
 #define lc3_add(i,j,k)  \
 	print("ADD R%d, R%d, R%d\n",i,j,k);
 
-#define lc3_sub(i,j,k)  \
+/* Edgar: added "_negk" suffix, to make it clear that this has side effects */
+#define lc3_sub_negk(i,j,k)  \
 	print("NOT R%d, R%d\n",k,k);  \
 	print("ADD R%d, R%d, #1\n",k,k);  \
 	print("ADD R%d, R%d, R%d\n",i,j,k);
@@ -313,12 +314,12 @@ reg:  CVPU1(INDIRI1(addr))     "ldr %c, %0\n"  1
 reg:  CVIU1(INDIRU1(addr))     "ldr %c, %0\n"  1
 reg:  CVUI1(INDIRU1(addr))     "ldr %c, %0\n"  1
 
-reg: DIVI1(reg,reg)   "#\n"   15
-reg: DIVU1(reg,reg)   "#\n"   15
-reg: MODI1(reg,reg)   "#\n"   15
-reg: MODU1(reg,reg)   "#\n"   15
-reg: MULI1(reg,reg)   "#\n"   10
-reg: MULU1(reg,reg)   "#\n"   10
+reg: DIVI1(reg,reg)   "div %c, %0, %1\n"   1
+reg: DIVU1(reg,reg)   "div %c, %0, %1\n"   1	/* Edgar: This is equivalent to original implementation, but maybe we should handle unsigned division */
+reg: MODI1(reg,reg)   "mod %c, %0, %1\n"   1
+reg: MODU1(reg,reg)   "mod %c, %0, %1\n"   1	/* Edgar: This is equivalent to original implementation, but maybe we should handle unsigned division */
+reg: MULI1(reg,reg)   "mul %c, %0, %1\n"   1
+reg: MULU1(reg,reg)   "mul %c, %0, %1\n"   1	/* Edgar: Because we discard hi part of result, unsigned is equivalent to signed */
 
 c5: CNSTP1            "%a"                range(a,-16,15)
 c5: CNSTI1            "%a"                range(a,-16,15)
@@ -353,10 +354,19 @@ reg: SUBI1(reg,reg)   "#\n"  3
 reg: SUBP1(reg,reg)   "#\n"  3
 reg: SUBU1(reg,reg)   "#\n"  3
 
-reg: LSHI1(reg,reg)   "#\n"  6
-reg: LSHU1(reg,reg)   "#\n"  6
-reg: RSHI1(reg,reg)   "#\n"  15
-reg: RSHU1(reg,reg)   "#\n"  15
+uc4: CNSTP1         "%a"                range(a,0,15)
+uc4: CNSTI1         "%a"                range(a,0,15)
+uc4: CNSTU1         "%a"                range(a,0,15)
+
+reg: LSHI1(reg,uc4)   "sll %c, %0, #%1\n"  
+reg: LSHU1(reg,uc4)   "sll %c, %0, #%1\n"  
+reg: RSHI1(reg,uc4)   "sra %c, %0, #%1\n"  
+reg: RSHU1(reg,uc4)   "sra %c, %0, #%1\n"  
+
+reg: LSHI1(reg,reg)   "sll %c, %0, %1\n" 1
+reg: LSHU1(reg,reg)   "sll %c, %0, %1\n" 1
+reg: RSHI1(reg,reg)   "sra %c, %0, %1\n" 1
+reg: RSHU1(reg,reg)   "sra %c, %0, %1\n" 1
 
 reg: BCOMI1(reg)  "not %c,%0\n"   1
 reg: BCOMU1(reg)  "not %c,%0\n"   1
@@ -751,6 +761,7 @@ static void emit2(Node p) {
 
 /*************** Logical Operators: |,^,<<,>> ************************/
 		case BOR+I:
+			print(";<or R%d, R%d, R%d>\n",getregnum(p), getregnum(LEFT_CHILD(p)), getregnum(RIGHT_CHILD(p)));
 			/*OR done with demorgan's theorem (a'b')'*/
 			prologue(p,&x,&y,&z,&yflag,&destflag);	
 			lc3_push(y);
@@ -765,9 +776,11 @@ static void emit2(Node p) {
 			lc3_pop(y);
 			
 			epilogue(p,&x,&y,&yflag,&destflag);
+			print("</or>\n");
 			break;
 
 		case BXOR+I:
+			print(";<xor R%d, R%d, R%d>\n",getregnum(p), getregnum(LEFT_CHILD(p)), getregnum(RIGHT_CHILD(p)));
 			prologue(p,&x,&y,&z,&yflag,&destflag);	
 			lc3_push(y);
 
@@ -786,11 +799,12 @@ static void emit2(Node p) {
 
 			lc3_pop(y);
 			epilogue(p,&x,&y,&yflag,&destflag);
+			print(";</xor>\n");
 			break;
 
+#if 0	/* Not used because we added single instruction efficient implementation in the patters */
 		case LSH+I: 
-			print(";LSH\n");
-
+			print(";<sll R%d, R%d, R%d>\n",getregnum(p), getregnum(LEFT_CHILD(p)), getregnum(RIGHT_CHILD(p)));
 			labels[0] = genlabel(1);
 			labels[1] = genlabel(1);
 
@@ -815,10 +829,11 @@ static void emit2(Node p) {
 
 			lc3_pop(z);
 			epilogue(p,&x,&y,&yflag,&destflag);
+			print(";</sll>\n");
 			break;
 
 		case RSH+I: 
-			print(";RSHI\n");
+			print(";<sra R%d, R%d, R%d>\n",getregnum(p), getregnum(LEFT_CHILD(p)), getregnum(RIGHT_CHILD(p)));
 			prologue(p,&x,&y,&z,&yflag,&destflag);
 
 			lc3_push(z);
@@ -897,12 +912,15 @@ static void emit2(Node p) {
 
 			lc3_pop(z);
 			epilogue(p,&x,&y,&yflag,&destflag);
+			print(";</sra>\n");
 			break;
+#endif
 
 /*************** Arithematic Functions  -,*, /,% ***********************/
 		case SUB+I: case SUB+P: case SUB+U:
-			if(specific(RIGHT_CHILD(p)->op) != CNST)
+			if(specific(RIGHT_CHILD(p)->op) != CNST) // Edgar: And what if it is a constant?
 			{
+				print(";<sub R%d, R%d, R%d>\n",getregnum(p), getregnum(LEFT_CHILD(p)), getregnum(RIGHT_CHILD(p)));
 				prologue(p,&x,&y,&z,&yflag,&destflag);
 
 				lc3_push(z);
@@ -911,11 +929,13 @@ static void emit2(Node p) {
 				lc3_add(x,y,z);
 				lc3_pop(z);
 				epilogue(p,&x,&y,&yflag,&destflag);
+				print(";</sub>\n");
 			}
 			break;
 
+#if 0	/* Not used because we added single instruction efficient implementation in the patters */
 		case MUL+I:
-			//print(";mul R%d, R%d, R%d\n",getregnum(p), getregnum(LEFT_CHILD(p)), getregnum(RIGHT_CHILD(p)));
+			print(";<mul R%d, R%d, R%d>\n",getregnum(p), getregnum(LEFT_CHILD(p)), getregnum(RIGHT_CHILD(p)));
 			prologue(p,&x,&y,&z,&yflag,&destflag);
 
 			lc3_push(z);
@@ -957,12 +977,14 @@ static void emit2(Node p) {
 			//print("L%d\n",labels[2]);
 			lc3_lab(labels[2]);
 
-			print(";bef epilogue x=%d y=%d z=%d\n",x,y,z);
+			//print(";bef epilogue x=%d y=%d z=%d\n",x,y,z);
 			epilogue(p,&x,&y,&yflag,&destflag);
-			print(";aft epilogue x=%d y=%d z=%d\n",x,y,z);
+			//print(";aft epilogue x=%d y=%d z=%d\n",x,y,z);
+			print(";</mul>\n");
 			break;
 
 		case DIV+I:
+			print(";<div R%d, R%d, R%d>\n",getregnum(p), getregnum(LEFT_CHILD(p)), getregnum(RIGHT_CHILD(p)));
 			//print(";diving\n");
 			prologue(p,&x,&y,&z,&yflag,&destflag);
 
@@ -1023,11 +1045,11 @@ static void emit2(Node p) {
 			print("L%d\n",labels[0]);
 
 			epilogue(p,&x,&y,&yflag,&destflag);
-			print(";div done\n");
+			print(";</div>\n");
 			break;
 
 		case MOD+I:
-			//print(";modding R%d, R%d, R%d\n",getregnum(p), getregnum(LEFT_CHILD(p)), getregnum(RIGHT_CHILD(p)));
+			print(";<mod R%d, R%d, R%d>\n",getregnum(p), getregnum(LEFT_CHILD(p)), getregnum(RIGHT_CHILD(p)));
 			prologue(p,&x,&y,&z,&yflag,&destflag);
 
 			/* need 5 labels for signed mod!*/
@@ -1063,7 +1085,7 @@ static void emit2(Node p) {
 
 			/*y=mod(y,z)-z*/
 			lc3_addimm(x,y,0);
-			lc3_sub(x,x,z);
+			lc3_sub_negk(x,x,z);
 
 			lc3_pop(z);
 			lc3_pop(y);
@@ -1086,12 +1108,13 @@ static void emit2(Node p) {
 			print("L%d\n",labels[0]);
 
 			epilogue(p,&x,&y,&yflag,&destflag);
-			print(";modding done\n");
+			print(";</mod>\n");
 			break;
+#endif
 
 /******************Copy a block of memory---like movsb in x*************/
 		case ASGN+B:
-			print(";ASGNB\n");
+			print(";<ASGNB>\n");
 			//if(atoi(p->syms[0]->x.name) == 0)
 				//break;
 
@@ -1104,12 +1127,13 @@ static void emit2(Node p) {
 			// blkloop(int dreg, int doff, int sreg, int soff, int size, int tmps[]) 
 			lc3_pop(3);
 			lc3_pop(2);
+			print(";</ASGNB>\n");
 			break;
 
 /******************Copy a block of memory to the stack*************/
 /*used to pass in struct as argument to a function*/
 		case ARG+B:
-			print(";ARGB\n");
+			print(";<ARGB>\n");
 			//if(atoi(p->syms[0]->x.name) == 0)
 			//	break;
 			i = p->syms[0]->u.c.v.i;
@@ -1129,6 +1153,7 @@ static void emit2(Node p) {
 			lc3_pop(3);
 			lc3_pop(2);
 			lc3_pop(1);
+			print(";</ARGB>\n");
 			break;
 	}
 }
