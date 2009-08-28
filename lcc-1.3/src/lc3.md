@@ -391,15 +391,15 @@ stmt: LTU1(reg,reg)  "#conditional branch\n"   1
 stmt: NEI1(reg,reg)  "#conditional branch\n"   1
 stmt: NEU1(reg,reg)  "#conditional branch\n"   1
 
-reg:  CALLI1(jaddr)  ".LC3GLOBAL %0 0\nLDR R0, R0, #0\njsrr R0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
-reg:  CALLP1(jaddr)  ".LC3GLOBAL %0 0\nLDR R0, R0, #0\njsrr R0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
-reg:  CALLU1(jaddr)  ".LC3GLOBAL %0 0\nLDR R0, R0, #0\njsrr R0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
-stmt: CALLV(jaddr)   ".LC3GLOBAL %0 0\nLDR R0, R0, #0\njsrr R0\n"  1
+reg:  CALLI1(jaddr)  "#.LC3GLOBAL %0 0\nLDR R0, R0, #0\njsrr R0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
+reg:  CALLP1(jaddr)  "#.LC3GLOBAL %0 0\nLDR R0, R0, #0\njsrr R0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
+reg:  CALLU1(jaddr)  "#.LC3GLOBAL %0 0\nLDR R0, R0, #0\njsrr R0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
+stmt: CALLV(jaddr)   "#.LC3GLOBAL %0 0\nLDR R0, R0, #0\njsrr R0\n"  1
 
-reg:  CALLI1(reg)    "jsrr %0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
-reg:  CALLP1(reg)    "jsrr %0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
-reg:  CALLU1(reg)    "jsrr %0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
-stmt: CALLV(reg)     "jsrr %0\n"  1
+reg:  CALLI1(reg)    "#jsrr %0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
+reg:  CALLP1(reg)    "#jsrr %0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
+reg:  CALLU1(reg)    "#jsrr %0\nLDR R7, R6, #0\nADD R6, R6, #1\n"  1
+stmt: CALLV(reg)     "#jsrr %0\n"  1
 
 stmt: RETI1(reg)     "# ret\n"  1
 stmt: RETU1(reg)     "# ret\n"  1
@@ -623,6 +623,33 @@ static void emit2(Node p) {
 	char* str;
 
 	switch (specific(p->op)) {
+
+/***********Handles Calls*********************************/
+		case CALL+U: case CALL+I:
+		case CALL+P: case CALL+V:
+			i = 0; /* count things what has to be poped out of the stack (arguments, return val, pRETB) */
+
+			if (specific(LEFT_CHILD(p)->op) == ADDRG+P) { // 
+				print(".LC3GLOBAL %s 0\nLDR R0, R0, #0\n", (LEFT_CHILD(p)->syms[0]->x.name));
+			}
+
+			print("jsrr R0\n");
+			if (specific(p->op) != CALL+V) {
+				print("LDR R7, R6, #0\n");
+			}
+				/* pop the return value.
+				   NOTE: This should be done only if (p->op != CALLV), but function body reserves stack slot even for void functions.
+				   Untill function() is fixed we have to do it here
+				    */
+				i++;
+
+			if (p->syms[0]) /* size of arguments */ 
+				i += p->syms[0]->u.c.v.i;
+				
+			if (i) {
+				print("ADD R6, R6, #%d\n", i); // TODO: won't work for all sizes
+			}
+			break;
 
 /***********Handles spilling a register*********************************/
 /*does it without telling the back end to allocate another register*/
