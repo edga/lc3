@@ -657,7 +657,9 @@ static void emit2(Node p) {
 				i += p->syms[0]->u.c.v.i;
 				
 			if (i) {
-				print("ADD R6, R6, #%d\n", i); // TODO: won't work for all sizes
+				for(;i>15;i-=15)
+					lc3_addimm(6,6,15);
+				lc3_addimm(6,6,i);
 			}
 			break;
 
