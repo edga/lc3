@@ -16,6 +16,19 @@
 #define PS2KBD_S  0xfe18u
 #define PS2KBD_D  0xfe1au
 
+/* Interrupt control registers */
+#define INT0_CR   0xfff0u
+#define INT1_CR   0xfff1u
+#define INT2_CR   0xfff2u
+#define INT3_CR   0xfff3u
+#define INT4_CR   0xfff4u
+#define INT5_CR   0xfff5u
+#define INT6_CR   0xfff6u
+#define INT7_CR   0xfff7u
+/* Machine control register */
+#define LC3_MCR   0xfffeu
+
+
 #define IO_READY  0x8000u
 
 /* Primitive I/O routines */
