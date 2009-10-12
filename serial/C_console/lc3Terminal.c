@@ -16,6 +16,12 @@
 
 #define SERIAL_READ_RESPONSE_MS 40
 
+#define LC3_CMD_QUERY	"\x1bQ"
+#define LC3_READY_RESPONSE	"Ready."
+#define LC3_CMD_UPLOAD	"\x1bU"
+#define LC3_CMD_START	"\x1bS"
+
+
 #define COLOR_LOCAL (FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE)
 #define COLOR_REMOTE (FOREGROUND_GREEN | FOREGROUND_INTENSITY)
 #define COLOR_REMOTE_ESCAPE (FOREGROUND_GREEN)
@@ -94,6 +100,43 @@ void wait_and_quit() {
 	exit(1);
 }
 
+/*******************************************************/
+
+/*
+ * Options
+ */
+int opt_start_program = -1;
+int opt_is_ser_file;
+char * arg_program_file;
+char * arg_com_port = "COM1";
+
+void parse_options(int argc, char *argv[]){
+   char * ext;
+   
+	if (argc <= 1) {
+		local_message("Usage: %s LC3_OBJ_FILE\n", argv[0]);
+		local_message("\nNote:\n\n"
+			"When invoking from Windows file explorer, use following:\n"
+			"  * \"Open with\" dialog on the obj file, or\n"
+			"  * \"SendTo\" menu on the obj file, or\n"
+			"  * Drag&Drop the obj file onto this program.\n");
+		wait_and_quit();
+	} else {
+		arg_program_file = argv[1];
+		ext = strrchr(arg_program_file, '.');
+		if (ext && strcasecmp(ext+1, "ser")==0) {
+			opt_is_ser_file = 1;
+		} else if (ext && strcasecmp(ext+1, "obj")==0) {
+			opt_is_ser_file = 0;
+		} else {
+			local_message("Error: Must be invoked with obj file.\n");
+			wait_and_quit();
+		}
+	}
+}
+
+
+/************************************************************/
 
 HANDLE open_serial(char *port) {
 	DCB dcb;
@@ -133,43 +176,94 @@ HANDLE open_serial(char *port) {
 	return hCom;
 }
 
+int send_serial(HANDLE hCom, char * data, int size) {
+	DWORD bytesWritten;
+	
+	if (!WriteFile(hCom, data, size, &bytesWritten, NULL) 
+			 || bytesWritten<size) {
+			local_message("Write to serial failed (written %lu of %d, error: %lu)\n",
+					 bytesWritten, size, GetLastError());
+			return -1;
+	}
+
+	return bytesWritten;
+}
+
 /******* Serial programmer **********/
 
 int program_device(HANDLE hCom, HANDLE hProg, int is_ser_file) {
+	int ready;
 	const int nbuff_words = 1024;
-	char buff[nbuff_words*2];
+	unsigned char buff[nbuff_words*2];
 	DWORD bytesRead, bytesWritten;
 	DWORD total = 0;
 	DWORD progSize = GetFileSize(hProg, NULL);
+	unsigned short progStart, progWords;
 
 	if (progSize % 2 || progSize > 0x10000) {
 		local_message("Error: Obj file's size has to be even and fit into LC3 memory\n");
 		return -1;
 	}
 
-	local_message("Uploading program...\n");
+	if (!ReadFile(hProg, buff, 4, &bytesRead, NULL)
+          || bytesRead<4) {
+		local_message("Error: unable to read Obj file\n");
+		return -1;
+	}
+	if (is_ser_file) {
+		// This is ser file, transmission size is first word
+		// The data is in Network order (big-endian)
+		progWords = (buff[0] << 8) + buff[1];
+		progStart = (buff[2] << 8) + buff[3];
+	} else { 
+		// This is obj file, need to calulate transmission size
+		progWords = progSize/2 - 1;
+		progStart = (buff[0] << 8) + buff[1];
+	}
+	SetFilePointer(hProg, 0, NULL, FILE_BEGIN);
+	opt_start_program = progStart;
+
+
+	// Query device
+	do {
+		int respSize = strlen(LC3_READY_RESPONSE);
+		
+		local_message("Quering device...");
+		PurgeComm(hCom, PURGE_RXCLEAR);
+		if (send_serial(hCom, LC3_CMD_QUERY, 2) < 2) {
+			return -1;
+		}
+		// Wait some time to allow device to respond
+		Sleep(100);
+		ReadFile(hCom, buff, respSize, &bytesRead, NULL);
+		ready = strncmp(buff, LC3_READY_RESPONSE, respSize)==0;
+		if (!ready) {
+			local_message(" Device not ready.\n"
+							  "Press PROGRAM push-button (LEFT on the FPGA main board)!\n");
+			Sleep(2000);
+		}
+	} while (!ready);
+	
+	local_message("\nUploading %u words starting from x%04x\n", progWords, progStart);
+	if (send_serial(hCom, LC3_CMD_UPLOAD, 2) < 2) {
+		return -1;
+	}
 
 	if (!is_ser_file) {
 		// This is obj file, need to send transmission size before the data 
 		// This has to be send in Network order (big-endian)
-		unsigned short words = progSize/2 - 1;
-	   buff[0] = (char)(words / 256);
-		buff[1] = (char)(words % 256);
-		if (!WriteFile(hCom, buff, 2, &bytesWritten, NULL)
-			 || bytesWritten<2) {
-			local_message("Write to serial failed (written %lu of %d, error: %lu)\n",
-					 bytesWritten, 2, GetLastError());
+	   buff[0] = (char)(progWords / 256);
+		buff[1] = (char)(progWords % 256);
+		if (send_serial(hCom, buff, 2) < 2) {
 			return -1;
 		}
 	}
 
+	total = 0;
 	SetLastError(ERROR_SUCCESS);
 	while (ReadFile(hProg, buff, nbuff_words*2, &bytesRead, NULL)
           && bytesRead!=0) {
-		if (!WriteFile(hCom, buff, bytesRead, &bytesWritten, NULL) ||
-			 bytesRead != bytesWritten) {
-			local_message("Write to serial failed (written %lu of %lu, error: %lu)\n",
-					 bytesWritten, bytesRead, GetLastError());
+		if ((bytesWritten=send_serial(hCom, buff, bytesRead)) < bytesRead) {
 			SetLastError(ERROR_SUCCESS);
 		} else {
 			total += bytesWritten;
@@ -203,7 +297,23 @@ void receiver_thr(void *com) {
 	 *    	wait_and_quit();
 	 *    }
     */
-   local_message("Console started.");
+	if (opt_start_program >= 0) {
+		Sleep(100);
+		PurgeComm(hCom, PURGE_RXCLEAR);
+	}
+   local_message("Console started.\n");
+
+	if (opt_start_program >= 0) {
+	   buff[0] = (char)((unsigned)opt_start_program / 256);
+		buff[1] = (char)((unsigned)opt_start_program % 256);
+		local_message("Starting uploaded program (at: x%04X).", opt_start_program);
+		if (send_serial(hCom, LC3_CMD_START, 2) < 2) {
+			local_message("Starting Failed.\n");
+		}
+		if (send_serial(hCom, buff, 2) < 2) {
+			local_message("Starting Failed.\n");
+		}
+	}
 
 	while (1) {
 		/*  This code doesn't work, because it locks the serial (no write would be possible).
@@ -231,7 +341,6 @@ void receiver_thr(void *com) {
 int start_console_mode(HANDLE hCom) {
 	unsigned int thread_id = 0;
 	unsigned char databyte = 0;
-	static DWORD bytesWritten;
 	COMMTIMEOUTS timeouts={0};
    
 
@@ -268,50 +377,13 @@ int start_console_mode(HANDLE hCom) {
       if (databyte == 13) {
         databyte = '\n';
       }
-		if (!WriteFile(hCom, &databyte, 1, &bytesWritten, NULL) ) {
-			local_message("Write to serial failed (error: %lu)\n",
-				GetLastError());
-		}
+		send_serial(hCom, &databyte, 1);
 	}
 
 	return 0;
 }
 /************************************************************/
 
-/*
- * Options
- */
-int opt_is_ser_file;
-char * arg_program_file;
-char * arg_com_port = "COM1";
-
-void parse_options(int argc, char *argv[]){
-   char * ext;
-   
-	if (argc <= 1) {
-		local_message("Usage: %s LC3_OBJ_FILE\n", argv[0]);
-		local_message("\nNote:\n\n"
-			"When invoking from Windows file explorer, use following:\n"
-			"  * \"Open with\" dialog on the obj file, or\n"
-			"  * \"SendTo\" menu on the obj file, or\n"
-			"  * Drag&Drop the obj file onto this program.\n");
-		wait_and_quit();
-	} else {
-		arg_program_file = argv[1];
-		ext = strrchr(arg_program_file, '.');
-		if (ext && strcasecmp(ext+1, "ser")==0) {
-			opt_is_ser_file = 1;
-		} else if (ext && strcasecmp(ext+1, "obj")==0) {
-			opt_is_ser_file = 0;
-		} else {
-			local_message("Error: Must be invoked with obj file.\n");
-			wait_and_quit();
-		}
-	}
-}
-
-
-/************************************************************/
 
 
 
@@ -340,7 +412,7 @@ int main(int argc, char *argv[])
 	}
 	CloseHandle(hProg);
 
-
+	
 	if (start_console_mode(hCom) < 0) {
 		wait_and_quit();
 	}
