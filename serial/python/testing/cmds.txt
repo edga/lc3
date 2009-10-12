@@ -1,0 +1,2 @@
+export ~/.bashrcsrouce ~/.bashrc
+time python 'c:\lc3\bin\serial_cat.py' -O cat.ser -s < /dev/null ; time python 'c:\lc3\bin\serial_cat.py' d.txt out.txt ; diff d.txt  out.txt
