@@ -16,30 +16,81 @@
 
 #define SERIAL_READ_RESPONSE_MS 40
 
+#define COLOR_LOCAL (FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE)
+#define COLOR_REMOTE (FOREGROUND_GREEN | FOREGROUND_INTENSITY)
+#define COLOR_REMOTE_ESCAPE (FOREGROUND_GREEN)
 
-int color_printf(WORD color, const char* format, ... ) {
-	va_list args;
- 	WORD originalColors;
-	HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 
+/************** Synchronized terminal output with colors **************************/
+
+WORD OutputOriginalColors;
+HANDLE OutputHandle;
+CRITICAL_SECTION OutputCS;
+
+// Set-up environment for output primitives
+void output_init() {
 	CONSOLE_SCREEN_BUFFER_INFO ConsoleInfo;
-	GetConsoleScreenBufferInfo(hStdout, &ConsoleInfo);
-	originalColors = ConsoleInfo.wAttributes;
+	OutputHandle = GetStdHandle(STD_OUTPUT_HANDLE);
 
-	SetConsoleTextAttribute(hStdout, color | FOREGROUND_INTENSITY);
+	GetConsoleScreenBufferInfo(OutputHandle, &ConsoleInfo);
+	OutputOriginalColors = ConsoleInfo.wAttributes;
 
-	va_start(args, format);
-	vprintf(format, args);
-	va_end(args);
-
-	SetConsoleTextAttribute(hStdout, originalColors);
-	return 0;
+	// Don't want threads two threads to execute printf at the same time
+	InitializeCriticalSectionAndSpinCount(&OutputCS, 0x80000400);
 }
 
+// Clean-up environment
+void output_cleanup() {
+	EnterCriticalSection(&OutputCS);
+	
+	SetConsoleTextAttribute(OutputHandle, OutputOriginalColors);
+	
+	// will be cleaned-up on process termination
+   //DeleteCriticalSection(&OutputCS)
+}
+	
+
+int local_message(const char* format, ... ) {
+	int ret;
+	va_list args;
+	
+	EnterCriticalSection(&OutputCS); 
+
+	SetConsoleTextAttribute(OutputHandle, COLOR_LOCAL);
+	
+	va_start(args, format);
+	ret = vprintf(format, args);
+	va_end(args);
+	
+	LeaveCriticalSection(&OutputCS);
+	
+	return ret;
+}
+
+void output_received_data(const char* data, int length) {
+	DWORD bytesWritten;
+	EnterCriticalSection(&OutputCS); 
+
+	SetConsoleTextAttribute(OutputHandle, COLOR_REMOTE);
+
+	if (!WriteFile(OutputHandle, data, length, &bytesWritten, NULL)
+		 || bytesWritten<length) {
+		SetConsoleTextAttribute(OutputHandle, COLOR_LOCAL);
+		printf("Write to stdout failed (written %lu of %d, error: %lu)\n",
+						  bytesWritten, length, GetLastError());
+		return;
+	}
+	
+	LeaveCriticalSection(&OutputCS);
+}
+
+/*******************************************************/
+
 void wait_and_quit() {
-	printf("\npress Enter...");
+	local_message("\npress Enter...");
 	getchar();
 
+	output_cleanup();
 	exit(1);
 }
 
@@ -55,7 +106,7 @@ HANDLE open_serial(char *port) {
 			NULL // hTemplate must be NULL for comm devices
 			);
 	if (hCom == INVALID_HANDLE_VALUE) {
-		printf("Unable to open serial port (error: %lu)\n", GetLastError());
+		local_message("Unable to open serial port (error: %lu)\n", GetLastError());
 		return NULL;
 	}
 
@@ -63,7 +114,7 @@ HANDLE open_serial(char *port) {
 	// of the input and output buffers with SetupComm.
 
 	if (!GetCommState(hCom, &dcb)) {
-		printf("GetCommState failed with error %lu.\n", GetLastError());
+		local_message("GetCommState failed with error %lu.\n", GetLastError());
 		return NULL;
 	}
 
@@ -74,11 +125,11 @@ HANDLE open_serial(char *port) {
 	dcb.StopBits = ONESTOPBIT; // one stop bit
 
 	if (!SetCommState(hCom, &dcb)) {
-		printf("SetCommState failed with error %d.\n", (int)GetLastError());
+		local_message("SetCommState failed with error %d.\n", (int)GetLastError());
 		return NULL;
 	}
 
-	printf("Serial port %s successfully reconfigured.\n", port);
+	local_message("Serial port %s successfully reconfigured.\n", port);
 	return hCom;
 }
 
@@ -92,11 +143,11 @@ int program_device(HANDLE hCom, HANDLE hProg, int is_ser_file) {
 	DWORD progSize = GetFileSize(hProg, NULL);
 
 	if (progSize % 2 || progSize > 0x10000) {
-		printf("Error: Obj file's size has to be even\n");
+		local_message("Error: Obj file's size has to be even and fit into LC3 memory\n");
 		return -1;
 	}
 
-	printf("Uploading program...\n");
+	local_message("Uploading program...\n");
 
 	if (!is_ser_file) {
 		// This is obj file, need to send transmission size before the data 
@@ -106,7 +157,7 @@ int program_device(HANDLE hCom, HANDLE hProg, int is_ser_file) {
 		buff[1] = (char)(words % 256);
 		if (!WriteFile(hCom, buff, 2, &bytesWritten, NULL)
 			 || bytesWritten<2) {
-			printf("Write to serial failed (written %lu of %d, error: %lu)\n",
+			local_message("Write to serial failed (written %lu of %d, error: %lu)\n",
 					 bytesWritten, 2, GetLastError());
 			return -1;
 		}
@@ -117,20 +168,20 @@ int program_device(HANDLE hCom, HANDLE hProg, int is_ser_file) {
           && bytesRead!=0) {
 		if (!WriteFile(hCom, buff, bytesRead, &bytesWritten, NULL) ||
 			 bytesRead != bytesWritten) {
-			printf("Write to serial failed (written %lu of %lu, error: %lu)\n",
+			local_message("Write to serial failed (written %lu of %lu, error: %lu)\n",
 					 bytesWritten, bytesRead, GetLastError());
 			SetLastError(ERROR_SUCCESS);
 		} else {
 			total += bytesWritten;
-			fprintf(stderr, "\r%3d%% complete (%5lu of %5lu bytes send)", (int)(total*100/progSize), total, progSize);
+			local_message("\r%3d%% complete     --  %5lu of %5lu bytes send", (int)(total*100/progSize), total, progSize);
 		}
 	}
+	local_message("\n");
 
 	if (GetLastError() != ERROR_SUCCESS) {
-		printf("\nRead of obj file failed with error %lu\n", GetLastError());
+		local_message("Read of obj file failed with error %lu\n", GetLastError());
 		return -1;
 	}
-	fprintf(stderr, "\n");
 
 	return 0;
 }
@@ -148,33 +199,32 @@ void receiver_thr(void *com) {
 	 *    // Set the event mask.
 	 *    if (!SetCommMask(hCom, EV_RXCHAR)) {
 	 *    {
-	 *    	printf("SetCommMask failed with error %d.\n", GetLastError());
+	 *    	local_message("SetCommMask failed with error %d.\n", GetLastError());
 	 *    	wait_and_quit();
 	 *    }
     */
-   printf("Console started.");
+   local_message("Console started.");
 
 	while (1) {
-     /*  This code doesn't work, because it locks the serial (no write would be possible).
-      *  So we use poling (see code below)
-	   *	if (!WaitCommEvent(hCom, &dwEvtMask, NULL) ||
-	   *		!(dwEvtMask & EV_RXCHAR)
-	   *	   )
-	   *	{
-	   *		printf("WaitCommEvent failed (error: %d, mask: 0x%X).\n", GetLastError(), dwEvtMask);
-	   *		wait_and_quit();
-	   *	}
-      */
+		/*  This code doesn't work, because it locks the serial (no write would be possible).
+		 *  So we use poling (see code below)
+		 *	if (!WaitCommEvent(hCom, &dwEvtMask, NULL) ||
+		 *		!(dwEvtMask & EV_RXCHAR)
+		 *	   )
+		 *	{
+		 *		local_message("WaitCommEvent failed (error: %d, mask: 0x%X).\n", GetLastError(), dwEvtMask);
+		 *		wait_and_quit();
+		 *	}
+		 */
 
 		bytesRead = 0;
 		ReadFile(hCom, buff, sizeof(buff), &bytesRead, NULL);
 		if (bytesRead > 0) {
-			// TODO: escape non-printables
-			fwrite(buff, bytesRead, 1, stdout);
+			output_received_data(buff, bytesRead);
 		} else {
-        // Give CPU to other task.
-		    Sleep(SERIAL_READ_RESPONSE_MS);
-		    }
+			// Give CPU to other task.
+			Sleep(SERIAL_READ_RESPONSE_MS);
+		}
 	}
 }
 
@@ -194,13 +244,13 @@ int start_console_mode(HANDLE hCom) {
 	timeouts.WriteTotalTimeoutMultiplier=10;
 	*/
 	if(!SetCommTimeouts(hCom, &timeouts)){
-		printf("SetCommTimeouts failed with error %lu\n", GetLastError());
+		local_message("SetCommTimeouts failed with error %lu\n", GetLastError());
 		return -1;
 	}
 
 	if ((thread_id = _beginthread(receiver_thr,4096,(void *)hCom)) < 0)
 	{
-		printf("Unable to create thread (ret: %d, errno: %d)\n", thread_id, errno);
+		local_message("Unable to create thread (ret: %d, errno: %d)\n", thread_id, errno);
 		return -1;
 	}
    
@@ -209,7 +259,7 @@ int start_console_mode(HANDLE hCom) {
 		/* It's probably fine if we send special key strokes too.
 		 * if (databyte==0 || databyte==0xe0) {
 		 * 	// special key hit
-		 * 	printf("<special key ignorred>");
+		 * 	local_message("<special key ignorred>");
 		 * 	getch();
 		 * 	continue;
 		 * }
@@ -219,7 +269,7 @@ int start_console_mode(HANDLE hCom) {
         databyte = '\n';
       }
 		if (!WriteFile(hCom, &databyte, 1, &bytesWritten, NULL) ) {
-			printf("Write to serial failed (error: %lu)\n",
+			local_message("Write to serial failed (error: %lu)\n",
 				GetLastError());
 		}
 	}
@@ -239,10 +289,11 @@ void parse_options(int argc, char *argv[]){
    char * ext;
    
 	if (argc <= 1) {
-		printf("Usage: %s LC3_OBJ_FILE\n", argv[0]);
-		printf("\nNote:\n\n"
+		local_message("Usage: %s LC3_OBJ_FILE\n", argv[0]);
+		local_message("\nNote:\n\n"
 			"When invoking from Windows file explorer, use following:\n"
 			"  * \"Open with\" dialog on the obj file, or\n"
+			"  * \"SendTo\" menu on the obj file, or\n"
 			"  * Drag&Drop the obj file onto this program.\n");
 		wait_and_quit();
 	} else {
@@ -253,7 +304,7 @@ void parse_options(int argc, char *argv[]){
 		} else if (ext && strcasecmp(ext+1, "obj")==0) {
 			opt_is_ser_file = 0;
 		} else {
-			printf("Error: Must be invoked with obj file.\n");
+			local_message("Error: Must be invoked with obj file.\n");
 			wait_and_quit();
 		}
 	}
@@ -268,13 +319,14 @@ int main(int argc, char *argv[])
 {
 	HANDLE hCom, hProg;
 
-
+	output_init();
+	
 	parse_options(argc, argv);
 
 	hProg = CreateFile(arg_program_file, GENERIC_READ, FILE_SHARE_READ, NULL,
 			OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
 	if (hProg == INVALID_HANDLE_VALUE) {
-		printf("Unable to open \"%s\" for reading (error: %lu)\n", arg_program_file, GetLastError());
+		local_message("Unable to open \"%s\" for reading (error: %lu)\n", arg_program_file, GetLastError());
 		wait_and_quit();
 	}
 
