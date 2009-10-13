@@ -278,7 +278,7 @@ class TerminalFrame(wx.Frame):
         
     def OnProgramDevice(self, event):
         """Menu point Program Device. Show the file selection dialog"""
-        selection = wx.FileSelector("Sellect file to upload", "C:\\lc3\\vhdl\\test_com\\src", "*.ser")
+        selection = wx.FileSelector("Sellect file to upload", os.getcwd(), "*.ser")
         if selection != '':
             try:
                 pf = ProgramFileLoader(selection)
