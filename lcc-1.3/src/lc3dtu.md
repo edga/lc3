@@ -537,7 +537,7 @@ static void progbeg(int argc, char *argv[]) {
 	tmask[IREG] = INTTMP | INTRET; tmask[FREG] = FLTTMP;
 	vmask[IREG] = INTVAR; vmask[FREG] = FLTVAR;
 
-	print(".Orig x3000\n");
+	print(".Orig x0500\n");
 	print("INIT_CODE\n");
 	/*
 	print("LEA R6, #-1\n");		//puts x3000 in r6
