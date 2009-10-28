@@ -6,6 +6,7 @@ import wx
 import wxSerialConfigDialog
 import serial
 import threading
+import os
 
 from ProgramFileLoader import ProgramFileLoader
 

@@ -14,6 +14,9 @@
 #include <process.h>
 
 
+#define SERIAL_PORT "COM1"
+#define MAX_FILES   50
+
 #define SERIAL_READ_RESPONSE_MS 40
 
 #define LC3_CMD_QUERY	"\x1bQ"
@@ -25,6 +28,7 @@
 #define COLOR_LOCAL (FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE)
 #define COLOR_REMOTE (FOREGROUND_GREEN | FOREGROUND_INTENSITY)
 #define COLOR_REMOTE_ESCAPE (FOREGROUND_GREEN)
+
 
 
 /************** Synchronized terminal output with colors **************************/
@@ -106,15 +110,24 @@ void wait_and_quit() {
  * Options
  */
 int opt_skip_upload = 0;
-int opt_start_program = -1;
+int opt_program_only = 0;
+int opt_start_address = -1;
 #ifdef USE_SER_FILES
 int opt_is_ser_file;
 #endif
-char * arg_program_file;
-char * arg_com_port = "COM1";
+char * arg_program_files[MAX_FILES];
+int arg_files_count;
+char * arg_com_port = SERIAL_PORT;
 
 void usage(const char *progname) {
-	local_message("Usage: %s LC3_OBJ_FILE\n", progname);
+	local_message("\nUsage: %s [-p] [LC3_OBJ_FILES]\n"
+					  "  -p: program only. Don't ask LC3 to start uploaded program,\n"
+					  "      and don't launch terminal.\n"
+					  "  if LC3_OBJ_FILES are missing programming step is skipped.\n"
+					  "  if -p is missing, the last object file specified is started after upload.\n"
+					  "\n"
+					  , progname);
+
 	local_message("\nNote:\n\n"
 		"When invoking from Windows file explorer, use following:\n"
 		"  * \"Open with\" dialog on the obj file, or\n"
@@ -122,31 +135,52 @@ void usage(const char *progname) {
 		"  * Drag&Drop the obj file onto this program.\n");
 }
 
-void parse_options(int argc, char *argv[]){
+void parse_options(int argc, char **argv){
    char * ext;
+	int usage_error = 0;
+	int arg_pos = 1;
 
-	if (argc <= 1) {
+	// Parse options
+	if (argc <= arg_pos) {
+		// No options neither arguments
 		opt_skip_upload = 1;
 	} else if (argv[1][0] == '-' || argv[1][0] == '/') {
-		usage(argv[0]);
-		wait_and_quit();
-	} else {
-		arg_program_file = argv[1];
-		ext = strrchr(arg_program_file, '.');
+		if (argv[1][1] == 'p') {
+			opt_program_only = 1;
+			arg_pos++;
+		} else {
+			local_message("Error: unrecognized option\n\n");
+			usage_error = 1;
+		}
+	}
+	
+	if (opt_program_only && argc <= arg_pos) {
+		local_message("Error: \"-p\" without files to program doesn't make sense\n\n");
+		usage_error = 1;
+	}
+
+	// Parse arguments
+	for (; !usage_error && arg_pos < argc; arg_pos++) {
+		ext = strrchr(argv[arg_pos], '.');
 #ifdef USE_SER_FILES
 		if (ext && strcasecmp(ext+1, "ser")==0) {
 			opt_is_ser_file = 1;
 		} else
 #endif
-			if (ext && strcasecmp(ext+1, "obj")==0) {
+		if (ext && strcasecmp(ext+1, "obj")==0) {
+			arg_program_files[arg_files_count++] = argv[arg_pos];
 #ifdef USE_SER_FILES
 			opt_is_ser_file = 0;
 #endif
 		} else {
-			local_message("Error: Must be invoked with obj file.\n");
-			usage(argv[0]);
-			wait_and_quit();
+			local_message("Error: Must be invoked with obj file (\"%s\" specified).\n", argv[arg_pos]);
+			usage_error = 1;
 		}
+	}
+	
+	if (usage_error) {
+		usage(argv[0]);
+		wait_and_quit();
 	}
 }
 
@@ -256,7 +290,7 @@ int program_device(HANDLE hCom, const char *program_file) {
 		progStart = (buff[0] << 8) + buff[1];
 	}
 	SetFilePointer(hProg, 0, NULL, FILE_BEGIN);
-	opt_start_program = progStart;
+	opt_start_address = progStart;
 
 
 	// Query device
@@ -276,7 +310,7 @@ int program_device(HANDLE hCom, const char *program_file) {
 		if (!ready) {
 			local_message(" Device not ready.\n"
 				"Press PROGRAM push-button (LEFT on the FPGA main board)!\n");
-			Sleep(2000);
+			Sleep(4000);
 		}
 	} while (!ready);
 
@@ -368,7 +402,7 @@ void receiver_thr(void *com) {
 	}
 }
 
-int start_console_mode(HANDLE hCom) {
+int start_terminal_mode(HANDLE hCom) {
 	unsigned int thread_id = 0;
 	unsigned char databyte = 0;
 	COMMTIMEOUTS timeouts={0};
@@ -420,6 +454,7 @@ int start_console_mode(HANDLE hCom) {
 int main(int argc, char *argv[])
 {
 	HANDLE hCom;
+	int i;
 
 	output_init();
 
@@ -433,19 +468,26 @@ int main(int argc, char *argv[])
 	if (opt_skip_upload) {
 		local_message("Upload operation skipped (no obj file specified).\n");
 	} else {
+		for (i=0; i < arg_files_count; i++) {
 #ifdef USE_SER_FILES
-		if (program_device(hCom, arg_program_file, opt_is_ser_file) < 0) {
+			if (program_device(hCom, arg_program_files[i], opt_is_ser_file) < 0) {
 #else
-		if (program_device(hCom, arg_program_file) < 0) {
+			if (program_device(hCom, arg_program_files[i]) < 0) {
 #endif
-			wait_and_quit();
+				wait_and_quit();
+			}
+			if (i+1 < arg_files_count) {
+				// Give device some slack, before programming next chunk
+				Sleep(200);
+			}
 		}
-		if (opt_start_program >= 0) {
-			char buff[] = { (char)((unsigned)opt_start_program / 256),
-								 (char)((unsigned)opt_start_program % 256)};
+			
+		if (!opt_program_only) {
+			char buff[] = { (char)((unsigned)opt_start_address / 256),
+								 (char)((unsigned)opt_start_address % 256)};
 			Sleep(100);
 			PurgeComm(hCom, PURGE_RXCLEAR);
-			local_message("Starting uploaded program (at: x%04X).", opt_start_program);
+			local_message("Starting uploaded program (at: x%04X).", opt_start_address);
 			if (send_serial(hCom, LC3_CMD_START, 2) < 2) {
 				local_message("Starting Failed.\n");
 			}
@@ -455,13 +497,15 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (start_console_mode(hCom) < 0) {
-		wait_and_quit();
+	if (!opt_program_only) {
+		if (start_terminal_mode(hCom) < 0) {
+			wait_and_quit();
+		}
 	}
-	// this point is never reached
+
+	// If terminal mode is started this point is never reached
 	// Files are closed automatically by OS then program is terminated by the user.
-	//
-	// CloseHandle(hCom);
+	CloseHandle(hCom);
 
 	return 0;
 }

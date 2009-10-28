@@ -558,7 +558,7 @@ static void progbeg(int argc, char *argv[]) {
 	print("HALT\n\n");
 	print("GLOBAL_DATA_POINTER .FILL GLOBAL_DATA_START\n");
 	print("GLOBAL_MAIN_POINTER .FILL main\n");
-	print("STACK_ADDR .FILL xefff\n");
+	print("STACK_ADDR .FILL xdfff\n");
 
 }
 /************************************************************
