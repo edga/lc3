@@ -494,8 +494,14 @@ static void progbeg(int argc, char *argv[]) {
     filename = (char*) malloc(strlen(firstfile));
     strcpy(filename, firstfile);
     i = 0;
-    while(filename[i]!='.' && filename[i]!='\0')
+    while(filename[i]!='.' && filename[i]!='\0') {
+        if(filename[i]==':' ||
+           filename[i]==' ' ||
+           filename[i]=='\\' ||
+           filename[i]=='/')
+				filename[i] = '_';
         i++;
+    }
     filename[i] = '\0';
 
 	{
@@ -1160,6 +1166,27 @@ static void emit2(Node p) {
 			lc3_pop(2);
 			lc3_pop(1);
 			break;
+		/* Issue nice error message if foating point primitives are used */
+		case CNST+F:
+		case CVF+F:
+		case CVI+F:
+		case INDIR+F:
+		case NEG+F:
+		case ADD+F:
+		case DIV+F:
+		case MUL+F:
+		case SUB+F:
+		case ASGN+F:
+		case EQ+F: case GE+F:
+		case GT+F: case LT+F:
+		case LE+F: case NE+F:
+		case ARG+F:
+		case CALL+F:
+		case RET+F:
+		case RET+F:
+			error("Floating point is not supported!\n");
+			break;
+
 	}
 }
 /************************************************************
