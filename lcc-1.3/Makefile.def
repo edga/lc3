@@ -48,6 +48,7 @@ AR = __AR__
 RANLIB = __RANLIB__
 INSTALL_DIR = __INSTALL_DIR__
 export EXTRAFLAGS = __EXTRA_FLAGS__
+INSTALL_POST_CMD = __INSTALL_POST_CMD__
 # End of configuration block.
 
 CFLAGS  = -g -Wall ${EXTRAFLAGS}
@@ -70,6 +71,7 @@ install: all
 	${MKDIR} -p ${INSTALL_DIR}
 	-${CP} -f src/rcc${EXE} etc/lcc${EXE} cpp/cpp${EXE} lc3pp/lc3pp${EXE} \
 		${INSTALL_DIR}
+   ${INSTALL_POST_CMD}
 	${CHMOD} 555 ${INSTALL_DIR}/rcc${EXE} \
 		${INSTALL_DIR}/lcc${EXE} ${INSTALL_DIR}/cpp${EXE} \
 		${INSTALL_DIR}/lc3pp

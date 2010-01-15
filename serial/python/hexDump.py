@@ -3,7 +3,11 @@ import os
 from array import array
 
 
-def dumpLine(offset, line):
+def dumpLineVHDL(offset, line):
+    print ('X"%04x", X"%04x", X"%04x", X"%04x",  X"%04x", X"%04x", X"%04x", X"%04x",' % tuple(line)) +\
+           '-- addr %d - %d' % (offset, offset+7)
+           
+def dumpLineHex(offset, line):
     print ("%04x:  " % (offset)) + \
            "%04x %04x %04x %04x  %04x %04x %04x %04x" % tuple(line)
         
@@ -36,7 +40,8 @@ def dumpFile(path):
                 ll = l
                 loffset = offset+8
             offset += 8
-        dumpLine(offset, l)
+            #dumpLineVHDL(offset, l)
+            dumpLineHex(offset, l)
          
 
 

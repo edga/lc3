@@ -1207,7 +1207,6 @@ static void emit2(Node p) {
 		case ARG+F:
 		case CALL+F:
 		case RET+F:
-		case RET+F:
 			error("Floating point is not supported!\n");
 			break;
 
