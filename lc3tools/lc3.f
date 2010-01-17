@@ -256,15 +256,8 @@ static FILE* objout;
  * Each generated word is output on separate line as sequence of 16 characters ('1' or '0')
  */
 static FILE* binout;
-#ifdef PRODUCE_SER_FILE
-/*
- * "base.ser" file used to program CPU over the serial cable.
- * First word is count of bytes to transfer. Rest of the content is the same as "base.obj" file:
- * Second word is starting offset in the memory.
- * The rest is content of the memory
- */
-static FILE* serout;
-#endif
+static FILE* vcout;
+static int vcout_line_addr;
 
 static void new_inst_line ();
 static void bad_operands ();
@@ -410,10 +403,6 @@ NOP       {inst.op = OP_NOP;   BEGIN (ls_operands);}
 
 %%
 
-#ifdef PRODUCE_SER_FILE
-static void write_ser_value (int val);
-#endif
-
 int
 main (int argc, char** argv)
 {
@@ -457,13 +446,11 @@ main (int argc, char** argv)
         fprintf (stderr, "Could not open %s for writing.\n", fname);
 	return 2;
     }
-#ifdef PRODUCE_SER_FILE
-    strcpy (ext, ".ser");
-    if ((serout = fopen (fname, "wb")) == NULL) {
+    strcpy (ext, ".vconst");
+    if ((vconst = fopen (fname, "wb")) == NULL) {
         fprintf (stderr, "Could not open %s for writing.\n", fname);
 	return 2;
     }
-#endif
     strcpy (ext, ".sym");
     if ((symout = fopen (fname, "w")) == NULL) {
         fprintf (stderr, "Could not open %s for writing.\n", fname);
@@ -508,11 +495,6 @@ main (int argc, char** argv)
 	return 3;
     }
 
-#ifdef PRODUCE_SER_FILE
-    /* size of generated code is now known */
-    write_ser_value(code_loc-code_orig);
-#endif
-
     yyrestart (lc3in);
     /* Return lexer to initial state.  It is otherwise left in ls_finished
        if an .END directive was seen. */
@@ -534,10 +516,13 @@ main (int argc, char** argv)
     fprintf (symout, "\n");
     fclose (symout);
     fclose (objout);
-#ifdef PRODUCE_SER_FILE
-    fclose (serout);
-#endif
     fclose (binout);
+	/* VHDL constants file */
+	if (vcout_line_addr <= code_loc) {
+    	fprintf(vcout, " -- addr 0x%04x to 0x%04x\nothers => X\"0000\"\n", vcout_line_addr, code_loc);
+    } else
+    	fprintf(vcout, "others => X\"0000\"\n");
+	fclose(vcout);
 
     return 0;
 }
@@ -683,18 +668,6 @@ read_unsigned_val (const char* s, int* vptr, int bits)
     return 0;
 }
 
-#ifdef PRODUCE_SER_FILE
-static void
-write_ser_value (int val)
-{
-    unsigned char out[2];
-
-    out[0] = (val >> 8);
-    out[1] = (val & 0xFF);
-    fwrite (out, 2, 1, serout);
-}
-#endif
-
 static void
 write_value (int val)
 {
@@ -705,14 +678,25 @@ write_value (int val)
     code_loc = (code_loc + 1) & 0xFFFF;
     if (pass == 1)
         return;
+        
     /* FIXME: just htons... */
     out[0] = (val >> 8);
     out[1] = (val & 0xFF);
     fwrite (out, 2, 1, objout);
-#ifdef PRODUCE_SER_FILE
-    fwrite (out, 2, 1, serout);
-#endif
-    if (saw_orig) { /* don't write the offset (the first word) into bin file */
+    if (!saw_orig) {
+    	/* First line of VHDL constants file */
+    	fprintf(vcout, "%d to %d => X\"0000\", -- addr 0x%04x to 0x%04x\n", 
+    			0, code_loc, 0, code_loc);
+    	vcout_line_addr = code_loc;
+    } else { /* don't write the offset (the first word) into bin file */
+    	/* Store VHDL constants file */
+    	if (code_loc % 8 == 7) {
+	    	fprintf(vcout, "X\"%04x\",  -- addr 0x%04x to 0x%04x\n", val, vcout_line_addr, code_loc);
+	    	vcout_line_addr = code_loc+1;
+	    } else
+	    	fprintf(vcout, "X\"%04x\", ", val);
+	    	
+        /* Store Bits file */
         bits[0] = '\n';
         for (i=1; i <= 16; i++)
             bits[i] = (val & (1U << (16-i))) ? '1' : '0';

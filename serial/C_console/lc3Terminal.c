@@ -20,6 +20,7 @@
 #define SERIAL_READ_RESPONSE_MS 40
 
 #define LC3_CMD_QUERY	"\x1bQ"
+#define LC3_CMD_GET_MEM	"\x1bG"
 #define LC3_READY_RESPONSE	"Ready."
 #define LC3_CMD_UPLOAD	"\x1bU"
 #define LC3_CMD_START	"\x1bS"
@@ -111,16 +112,15 @@ void wait_and_quit() {
  */
 int opt_skip_upload = 0;
 int opt_program_only = 0;
+int opt_no_program_check = 0;
 int opt_start_address = -1;
-#ifdef USE_SER_FILES
-int opt_is_ser_file;
-#endif
 char * arg_program_files[MAX_FILES];
 int arg_files_count;
 char * arg_com_port = SERIAL_PORT;
 
 void usage(const char *progname) {
-	local_message("\nUsage: %s [-p] [LC3_OBJ_FILES]\n"
+	local_message("\nUsage: %s [-p][-n] [LC3_OBJ_FILES]\n"
+					  "  -n: no program check. Don't ask LC3 to send back uploaded program,\n"
 					  "  -p: program only. Don't ask LC3 to start uploaded program,\n"
 					  "      and don't launch terminal.\n"
 					  "  if LC3_OBJ_FILES are missing programming step is skipped.\n"
@@ -145,7 +145,10 @@ void parse_options(int argc, char **argv){
 		// No options neither arguments
 		opt_skip_upload = 1;
 	} else if (argv[1][0] == '-' || argv[1][0] == '/') {
-		if (argv[1][1] == 'p') {
+		if (argv[1][1] == 'n') {
+			opt_no_program_check = 1;
+			arg_pos++;
+		} else if (argv[1][1] == 'p') {
 			opt_program_only = 1;
 			arg_pos++;
 		} else {
@@ -162,16 +165,8 @@ void parse_options(int argc, char **argv){
 	// Parse arguments
 	for (; !usage_error && arg_pos < argc; arg_pos++) {
 		ext = strrchr(argv[arg_pos], '.');
-#ifdef USE_SER_FILES
-		if (ext && strcasecmp(ext+1, "ser")==0) {
-			opt_is_ser_file = 1;
-		} else
-#endif
 		if (ext && strcasecmp(ext+1, "obj")==0) {
 			arg_program_files[arg_files_count++] = argv[arg_pos];
-#ifdef USE_SER_FILES
-			opt_is_ser_file = 0;
-#endif
 		} else {
 			local_message("Error: Must be invoked with obj file (\"%s\" specified).\n", argv[arg_pos]);
 			usage_error = 1;
@@ -241,11 +236,7 @@ int send_serial(HANDLE hCom, char * data, int size) {
 
 /******* Serial programmer **********/
 
-#ifdef USE_SER_FILES
-int program_device(HANDLE hCom, const char *program_file, int is_ser_file) {
-#else
 int program_device(HANDLE hCom, const char *program_file) {
-#endif
 	int ready;
 	const int nbuff_words = 1024;
 	unsigned char buff[nbuff_words*2];
@@ -276,24 +267,18 @@ int program_device(HANDLE hCom, const char *program_file) {
 		CloseHandle(hProg);
 		return -1;
 	}
-#ifdef USE_SER_FILES
-	if (is_ser_file) {
-		// This is ser file, transmission size is first word
-		// The data is in Network order (big-endian)
-		progWords = (buff[0] << 8) + buff[1];
-		progStart = (buff[2] << 8) + buff[3];
-	} else
-#endif
-	{
-		// This is obj file, need to calulate transmission size
-		progWords = progSize/2 - 1;
-		progStart = (buff[0] << 8) + buff[1];
-	}
+
+	// This is obj file, need to calulate transmission size
+	progWords = progSize/2 - 1;
+	progStart = (buff[0] << 8) + buff[1];
+
 	SetFilePointer(hProg, 0, NULL, FILE_BEGIN);
 	opt_start_address = progStart;
 
 
-	// Query device
+	/*
+	 * Wait for LC3 to be ready
+	 */
 	do {
 		int respSize = strlen(LC3_READY_RESPONSE);
 
@@ -314,6 +299,9 @@ int program_device(HANDLE hCom, const char *program_file) {
 		}
 	} while (!ready);
 
+	/*
+	 * Upload file
+	 */
 	local_message("\nUploading \"%s\":\n\t%u words starting from x%04x\n",
 		      program_file, progWords, progStart);
 	if (send_serial(hCom, LC3_CMD_UPLOAD, 2) < 2) {
@@ -321,19 +309,13 @@ int program_device(HANDLE hCom, const char *program_file) {
 		return -1;
 	}
 
-#ifdef USE_SER_FILES
-	if (!is_ser_file) {
-#else
-	if (1) {
-#endif
-		// This is obj file, need to send transmission size before the data
-		// This has to be send in Network order (big-endian)
-		buff[0] = (char)(progWords / 256);
-		buff[1] = (char)(progWords % 256);
-		if (send_serial(hCom, buff, 2) < 2) {
-			CloseHandle(hProg);
-			return -1;
-		}
+	// This is obj file, need to send transmission size before the data
+	// This has to be send in Network order (big-endian)
+	buff[0] = (char)(progWords / 256);
+	buff[1] = (char)(progWords % 256);
+	if (send_serial(hCom, buff, 2) < 2) {
+		CloseHandle(hProg);
+		return -1;
 	}
 
 	total = 0;
@@ -349,6 +331,65 @@ int program_device(HANDLE hCom, const char *program_file) {
 		}
 	}
 	local_message("\n");
+
+	/*
+	 * Check for transmission errors
+	 */
+	if (!opt_no_program_check) {
+		local_message("\nComparing \"%s\" with %u words starting from x%04x\n",
+			      program_file, progWords, progStart);
+		if (send_serial(hCom, LC3_CMD_GET_MEM, 2) < 2) {
+			CloseHandle(hProg);
+			return -1;
+		}
+
+		// Send transmission size // Network order (big-endian)
+		buff[0] = (char)(progWords / 256);
+		buff[1] = (char)(progWords % 256);
+		if (send_serial(hCom, buff, 2) < 2) {
+			CloseHandle(hProg);
+			return -1;
+		}
+		// Send Start Offset // Network order (big-endian)
+		buff[0] = (char)(progStart / 256);
+		buff[1] = (char)(progStart % 256);
+		if (send_serial(hCom, buff, 2) < 2) {
+			CloseHandle(hProg);
+			return -1;
+		}
+
+		{
+			unsigned char lc3_buff[nbuff_words*2];
+			DWORD lc3_bytesRead;
+			int i;
+
+			total = 0;
+			SetFilePointer(hProg, 2, NULL, FILE_BEGIN); // Set file pointer at the start of the program (omit offset)
+			SetLastError(ERROR_SUCCESS);
+			while (ReadFile(hProg, buff, nbuff_words*2, &bytesRead, NULL)
+		          && bytesRead!=0) {
+			    if (!ReadFile(hCom, lc3_buff, bytesRead, &lc3_bytesRead, NULL)
+			    		|| lc3_bytesRead < bytesRead){
+			    	local_message("Read from serial failed (received %lu of %d, error: %lu)\n",
+			    			lc3_bytesRead, bytesRead, GetLastError());
+					CloseHandle(hProg);
+					return -1;
+			    }
+
+			    for (i=0; i < bytesRead; i++) {
+			    	if (buff[i] != lc3_buff[i]) {
+						local_message("\r Error at byte %d (send:0x%02x, received:0x02x)\n",
+							       total+i, buff[i], lc3_buff[i]);
+			    	}
+			    }
+
+				total += bytesRead;
+				local_message("\r%3d%% complete     --  %5lu of %5lu bytes verified",
+					       (int)(total*100/progSize), total, progSize);
+			}
+		}
+		local_message("\n");
+	}
 
 	if (GetLastError() != ERROR_SUCCESS) {
 		local_message("Read of \"%s\" failed with error %lu\n", program_file, GetLastError());
@@ -469,11 +510,7 @@ int main(int argc, char *argv[])
 		local_message("Upload operation skipped (no obj file specified).\n");
 	} else {
 		for (i=0; i < arg_files_count; i++) {
-#ifdef USE_SER_FILES
-			if (program_device(hCom, arg_program_files[i], opt_is_ser_file) < 0) {
-#else
 			if (program_device(hCom, arg_program_files[i]) < 0) {
-#endif
 				wait_and_quit();
 			}
 			if (i+1 < arg_files_count) {
