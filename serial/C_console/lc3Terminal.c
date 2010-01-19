@@ -31,6 +31,7 @@
 #define COLOR_REMOTE_ESCAPE (FOREGROUND_GREEN)
 
 
+void receiver_thr_2(void *com);
 
 /************** Synchronized terminal output with colors **************************/
 
@@ -183,6 +184,7 @@ void parse_options(int argc, char **argv){
 /************************************************************/
 
 HANDLE open_serial(char *port) {
+	COMMTIMEOUTS timeouts={0};
 	DCB dcb;
 	HANDLE hCom = CreateFile( port,
 			GENERIC_READ | GENERIC_WRITE,
@@ -216,6 +218,19 @@ HANDLE open_serial(char *port) {
 		local_message("SetCommState failed with error %d.\n", (int)GetLastError());
 		return NULL;
 	}
+	
+   /* Wait on reads */
+	timeouts.ReadIntervalTimeout=1;
+	timeouts.ReadTotalTimeoutConstant=100;
+	timeouts.ReadTotalTimeoutMultiplier=1;
+	/*
+	timeouts.WriteTotalTimeoutConstant=20;
+	timeouts.WriteTotalTimeoutMultiplier=10;
+	*/
+	if(!SetCommTimeouts(hCom, &timeouts)){
+		local_message("SetCommTimeouts failed with error %lu\n", GetLastError());
+		return NULL;
+	}
 
 	local_message("Serial port %s successfully configured.\n", port);
 	return hCom;
@@ -237,6 +252,7 @@ int send_serial(HANDLE hCom, char * data, int size) {
 /******* Serial programmer **********/
 
 int program_device(HANDLE hCom, const char *program_file) {
+	int err_cnt;
 	int ready;
 	const int nbuff_words = 1024;
 	unsigned char buff[nbuff_words*2];
@@ -290,8 +306,10 @@ int program_device(HANDLE hCom, const char *program_file) {
 		}
 		// Wait some time to allow device to respond
 		Sleep(100);
-		ReadFile(hCom, buff, respSize, &bytesRead, NULL);
-		ready = strncmp(buff, LC3_READY_RESPONSE, respSize)==0;
+		ready = ReadFile(hCom, buff, respSize, &bytesRead, NULL) &&
+			      bytesRead==respSize &&
+           	   strncmp(buff, LC3_READY_RESPONSE, respSize)==0;
+		//		local_message("debug: need:%d[%s], got: %d[%s]\n", respSize, LC3_READY_RESPONSE, bytesRead, buff);
 		if (!ready) {
 			local_message(" Device not ready.\n"
 				"Press PROGRAM push-button (LEFT on the FPGA main board)!\n");
@@ -336,6 +354,9 @@ int program_device(HANDLE hCom, const char *program_file) {
 	 * Check for transmission errors
 	 */
 	if (!opt_no_program_check) {
+		// Wait some time to allow device to respond
+		Sleep(200);
+		PurgeComm(hCom, PURGE_RXCLEAR);
 		local_message("\nComparing \"%s\" with %u words starting from x%04x\n",
 			      program_file, progWords, progStart);
 		if (send_serial(hCom, LC3_CMD_GET_MEM, 2) < 2) {
@@ -358,11 +379,13 @@ int program_device(HANDLE hCom, const char *program_file) {
 			return -1;
 		}
 
+		err_cnt = 0;
 		{
 			unsigned char lc3_buff[nbuff_words*2];
 			DWORD lc3_bytesRead;
 			int i;
 
+			// Wait some time to allow device to respond
 			total = 0;
 			SetFilePointer(hProg, 2, NULL, FILE_BEGIN); // Set file pointer at the start of the program (omit offset)
 			SetLastError(ERROR_SUCCESS);
@@ -375,11 +398,14 @@ int program_device(HANDLE hCom, const char *program_file) {
 					CloseHandle(hProg);
 					return -1;
 			    }
-
+				 
 			    for (i=0; i < bytesRead; i++) {
 			    	if (buff[i] != lc3_buff[i]) {
-						local_message("\r Error at byte %d (send:0x%02x, received:0x02x)\n",
-							       total+i, buff[i], lc3_buff[i]);
+						err_cnt++;
+						if (err_cnt < 32) {
+								  local_message("\r Error at byte %d (send:0x%02x, received:0x%02x)\n",
+												total+i, buff[i], lc3_buff[i]);
+						}
 			    	}
 			    }
 
@@ -391,6 +417,12 @@ int program_device(HANDLE hCom, const char *program_file) {
 		local_message("\n");
 	}
 
+	if (err_cnt > 0) {
+		local_message("WARNING: %d errors discovered during verification of \"%s\"\n", err_cnt, program_file);
+		//local_message("ERROR: %d errors discovered during verification of \"%s\"\n", err_cnt, program_file);
+		//CloseHandle(hProg);
+		//return -1;
+	}
 	if (GetLastError() != ERROR_SUCCESS) {
 		local_message("Read of \"%s\" failed with error %lu\n", program_file, GetLastError());
 		CloseHandle(hProg);
@@ -436,6 +468,48 @@ void receiver_thr(void *com) {
 		ReadFile(hCom, buff, sizeof(buff), &bytesRead, NULL);
 		if (bytesRead > 0) {
 			output_received_data(buff, bytesRead);
+		} else {
+			// Give CPU to other task.
+			Sleep(SERIAL_READ_RESPONSE_MS);
+		}
+	}
+}
+void receiver_thr_2(void *com) {
+	HANDLE hCom = (HANDLE) com;
+	char buff[256];
+	DWORD bytesRead;
+
+	/* Used by WaitCommEvent, which is disabled
+	 *    DWORD dwEvtMask;
+	 *    BOOL fSuccess;
+	 *    // Set the event mask.
+	 *    if (!SetCommMask(hCom, EV_RXCHAR)) {
+	 *    {
+	 *    	local_message("SetCommMask failed with error %d.\n", GetLastError());
+	 *    	wait_and_quit();
+	 *    }
+	 */
+	local_message("Console started.\n");
+
+	while (1) {
+		/*  This code doesn't work, because it locks the serial (no write would be possible).
+		 *  So we use poling (see code below)
+		 *	if (!WaitCommEvent(hCom, &dwEvtMask, NULL) ||
+		 *		!(dwEvtMask & EV_RXCHAR)
+		 *	   )
+		 *	{
+		 *		local_message("WaitCommEvent failed (error: %d, mask: 0x%X).\n", GetLastError(), dwEvtMask);
+		 *		wait_and_quit();
+		 *	}
+		 */
+
+		bytesRead = 0;
+		ReadFile(hCom, buff, sizeof(buff), &bytesRead, NULL);
+		if (bytesRead > 0) {
+			int i;
+			for (i=0; i<bytesRead; i++)
+				printf("%02x ", (unsigned char)buff[i]);
+			printf("\n");
 		} else {
 			// Give CPU to other task.
 			Sleep(SERIAL_READ_RESPONSE_MS);

@@ -562,9 +562,12 @@ static void progbeg(int argc, char *argv[]) {
 	print("LD R7, GLOBAL_MAIN_POINTER\n");		//puts x3000 in r6
 	print("jsrr R7\n");
 	print("HALT\n\n");
+	print("LD R7, SERIAL_MONITOR_ADDR\n");		
+	print("jmp R7\n");
 	print("GLOBAL_DATA_POINTER .FILL GLOBAL_DATA_START\n");
 	print("GLOBAL_MAIN_POINTER .FILL main\n");
 	print("STACK_ADDR .FILL xdfff\n");
+	print("SERIAL_MONITOR_ADDR .FILL x0200\n");
 
 }
 /************************************************************

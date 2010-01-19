@@ -447,7 +447,7 @@ main (int argc, char** argv)
 	return 2;
     }
     strcpy (ext, ".vconst");
-    if ((vconst = fopen (fname, "wb")) == NULL) {
+    if ((vcout = fopen (fname, "w")) == NULL) {
         fprintf (stderr, "Could not open %s for writing.\n", fname);
 	return 2;
     }
@@ -674,6 +674,7 @@ write_value (int val)
     unsigned char out[2];
     unsigned char bits[16+1];
     int i;
+    int this_loc = code_loc;
 
     code_loc = (code_loc + 1) & 0xFFFF;
     if (pass == 1)
@@ -685,14 +686,16 @@ write_value (int val)
     fwrite (out, 2, 1, objout);
     if (!saw_orig) {
     	/* First line of VHDL constants file */
-    	fprintf(vcout, "%d to %d => X\"0000\", -- addr 0x%04x to 0x%04x\n", 
-    			0, code_loc, 0, code_loc);
-    	vcout_line_addr = code_loc;
+      if (this_loc != 0) {
+          fprintf(vcout, "%d to 16#%x# => X\"0000\", -- addr 0x%04x to 0x%04x\n", 
+                    0, this_loc-1, 0, this_loc-1);
+     }
+      vcout_line_addr = val;
     } else { /* don't write the offset (the first word) into bin file */
     	/* Store VHDL constants file */
-    	if (code_loc % 8 == 7) {
-	    	fprintf(vcout, "X\"%04x\",  -- addr 0x%04x to 0x%04x\n", val, vcout_line_addr, code_loc);
-	    	vcout_line_addr = code_loc+1;
+    	if (this_loc % 8 == 7) {
+	    	fprintf(vcout, "X\"%04x\",  -- addr 0x%04x to 0x%04x\n", val, vcout_line_addr, this_loc);
+	    	vcout_line_addr = this_loc+1;
 	    } else
 	    	fprintf(vcout, "X\"%04x\", ", val);
 	    	
@@ -702,7 +705,7 @@ write_value (int val)
             bits[i] = (val & (1U << (16-i))) ? '1' : '0';
 
         /* Xilinx doesn't like trailing end of line, so we avoid it at the end */
-        if (code_loc-1 > code_orig)
+        if (this_loc > code_orig)
             fwrite (bits, 17, 1, binout);
         else
             fwrite (bits+1, 16, 1, binout);
