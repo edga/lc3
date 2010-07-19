@@ -9,12 +9,17 @@
 #include <conio.h>
 #include <stdio.h>
 #include <time.h>
+#include <string.h>
 #include <stdarg.h>
 #include <windows.h>
 #include <process.h>
 
 
-#define SERIAL_PORT "COM1"
+// Default serial port settings
+#define DEFAULT_SERIAL_PORT "COM1"
+#define DEFAULT_BAUD_RATE   115200
+#define DEFAULT_PARITY      0
+
 #define MAX_FILES   50
 
 #define SERIAL_READ_RESPONSE_MS 40
@@ -111,23 +116,30 @@ void wait_and_quit() {
 /*
  * Options
  */
-int opt_skip_upload = 0;
 int opt_program_only = 0;
 int opt_no_program_check = 0;
 int opt_start_address = -1;
 char * arg_program_files[MAX_FILES];
 int arg_files_count;
-char * arg_com_port = SERIAL_PORT;
+
+char * arg_com_port = DEFAULT_SERIAL_PORT;
+int arg_baud_rate = DEFAULT_BAUD_RATE;
+int arg_parity = DEFAULT_PARITY;
 
 void usage(const char *progname) {
-	local_message("\nUsage: %s [-p][-n] [LC3_OBJ_FILES]\n"
-					  "  -n: no program check. Don't ask LC3 to send back uploaded program,\n"
+	local_message("\nUsage: %s [-p][-n] [-s BAUD:PARITY:COMPORT] [LC3_OBJ_FILES]\n"
 					  "  -p: program only. Don't ask LC3 to start uploaded program,\n"
 					  "      and don't launch terminal.\n"
+					  "  -n: no program check. Don't ask LC3 to send back uploaded program,\n"
+					  "  -s: Change default serial settings (3 colon separated fields)\n"
+					  "      Valid parity codes: (%d: EVENPARITY, %d: MARKPARITY, %d: NOPARITY, %d: ODDPARITY, %d: SPACEPARITY)\n"
+					  "      Default port settings:     -s %d:%d:%s\n"
 					  "  if LC3_OBJ_FILES are missing programming step is skipped.\n"
 					  "  if -p is missing, the last object file specified is started after upload.\n"
 					  "\n"
-					  , progname);
+					  ,progname,
+					  EVENPARITY, MARKPARITY, NOPARITY, ODDPARITY, SPACEPARITY,
+					  DEFAULT_BAUD_RATE, DEFAULT_PARITY, DEFAULT_SERIAL_PORT);
 
 	local_message("\nNote:\n\n"
 		"When invoking from Windows file explorer, use following:\n"
@@ -136,44 +148,81 @@ void usage(const char *progname) {
 		"  * Drag&Drop the obj file onto this program.\n");
 }
 
+int parse_port(char * arg) {
+	char * d1;
+	char * d2;
+
+	d1 = strchr(arg, ':');
+	if (d1)	d2 = strchr(d1+1, ':');
+	if (!d1 || !d2) {
+		local_message ("\n   Wrong format of port specification. 'BAUD:PARITY:COMPORT' expected\n");
+		return -1;
+	}
+	arg_com_port = d2+1;
+	if (sscanf(arg, "%d:%d:", &arg_baud_rate, &arg_parity) != 2) {
+		local_message ("\n   Natural numbers expected in Baud Rate and Parity.\n");
+		return -1;
+	}
+	if (arg_baud_rate <= 0) {
+		local_message ("\n   Baud rate should be positive.\n");
+		return -1;
+	}
+	if (arg_parity != EVENPARITY &&
+		arg_parity != MARKPARITY &&
+		arg_parity != NOPARITY &&
+		arg_parity != ODDPARITY &&
+		arg_parity != SPACEPARITY) {
+		local_message ("\n   Invalid parity code.\n");
+		return -1;
+	}
+
+	// No error
+	return 0;
+}
+
+
+
 void parse_options(int argc, char **argv){
-   char * ext;
+	char * ext;
 	int usage_error = 0;
-	int arg_pos = 1;
+	int ap = 1;  // argument position
 
 	// Parse options
-	if (argc <= arg_pos) {
-		// No options neither arguments
-		opt_skip_upload = 1;
-	} else if (argv[1][0] == '-' || argv[1][0] == '/') {
-		if (argv[1][1] == 'n') {
-			opt_no_program_check = 1;
-			arg_pos++;
-		} else if (argv[1][1] == 'p') {
+	while (!usage_error && ap < argc &&
+			(argv[ap][0] == '-' || argv[ap][0] == '/')) {
+		if (argv[ap][1] == 'p' && !argv[ap][2]) {
 			opt_program_only = 1;
-			arg_pos++;
+			ap++;
+		} else if (argv[ap][1] == 'n' && !argv[ap][2]) {
+			opt_no_program_check = 1;
+			ap++;
+		} else if (argv[ap][1] == 's' && !argv[ap][2]) {
+			if (parse_port(argv[ap+1])) {
+				usage_error = 1;
+			}
+			ap +=2;
 		} else {
-			local_message("Error: unrecognized option\n\n");
+			local_message("Error: unrecognized option %s \n\n", argv[ap]);
 			usage_error = 1;
 		}
 	}
-	
-	if (opt_program_only && argc <= arg_pos) {
+
+	if (opt_program_only && argc <= ap) {
 		local_message("Error: \"-p\" without files to program doesn't make sense\n\n");
 		usage_error = 1;
 	}
 
-	// Parse arguments
-	for (; !usage_error && arg_pos < argc; arg_pos++) {
-		ext = strrchr(argv[arg_pos], '.');
+	// The rest is object files
+	for (; !usage_error && ap < argc; ap++) {
+		ext = strrchr(argv[ap], '.');
 		if (ext && strcasecmp(ext+1, "obj")==0) {
-			arg_program_files[arg_files_count++] = argv[arg_pos];
+			arg_program_files[arg_files_count++] = argv[ap];
 		} else {
-			local_message("Error: Must be invoked with obj file (\"%s\" specified).\n", argv[arg_pos]);
+			local_message("Error: Must be invoked with obj file (\"%s\" specified).\n", argv[ap]);
 			usage_error = 1;
 		}
 	}
-	
+
 	if (usage_error) {
 		usage(argv[0]);
 		wait_and_quit();
@@ -195,7 +244,7 @@ HANDLE open_serial(char *port) {
 			NULL // hTemplate must be NULL for comm devices
 			);
 	if (hCom == INVALID_HANDLE_VALUE) {
-		local_message("Unable to open %s serial port (error: %lu)\n", port, GetLastError());
+		local_message("Unable to open serial port \"%s\" (error: %lu)\n", port, GetLastError());
 		local_message("Close all programs which are using serial port and try again.\n");
 		return NULL;
 	}
@@ -208,17 +257,17 @@ HANDLE open_serial(char *port) {
 		return NULL;
 	}
 
-	// Fill in DCB: 115,200 bps, 8 data bits, no parity, and 1 stop bit.
-	dcb.BaudRate = CBR_115200; // set the baud rate
+	// Fill in DCB: 8 data bits, 1 stop bit, rest according to commandline
 	dcb.ByteSize = 8; // data size, xmit, and rcv
-	dcb.Parity = NOPARITY; // no parity bit
-	dcb.StopBits = ONESTOPBIT; // one stop bit
+	dcb.StopBits = ONESTOPBIT;
+	dcb.BaudRate = arg_baud_rate;
+	dcb.Parity = arg_parity;
 
 	if (!SetCommState(hCom, &dcb)) {
 		local_message("SetCommState failed with error %d.\n", (int)GetLastError());
 		return NULL;
 	}
-	
+
    /* Wait on reads */
 	timeouts.ReadIntervalTimeout=1;
 	timeouts.ReadTotalTimeoutConstant=100;
@@ -398,7 +447,7 @@ int program_device(HANDLE hCom, const char *program_file) {
 					CloseHandle(hProg);
 					return -1;
 			    }
-				 
+
 			    for (i=0; i < bytesRead; i++) {
 			    	if (buff[i] != lc3_buff[i]) {
 						err_cnt++;
@@ -580,7 +629,7 @@ int main(int argc, char *argv[])
 		wait_and_quit();
 	}
 
-	if (opt_skip_upload) {
+	if (arg_files_count == 0) {
 		local_message("Upload operation skipped (no obj file specified).\n");
 	} else {
 		for (i=0; i < arg_files_count; i++) {
@@ -592,7 +641,7 @@ int main(int argc, char *argv[])
 				Sleep(200);
 			}
 		}
-			
+
 		if (!opt_program_only) {
 			char buff[] = { (char)((unsigned)opt_start_address / 256),
 								 (char)((unsigned)opt_start_address % 256)};
