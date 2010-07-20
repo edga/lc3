@@ -21,7 +21,7 @@
 #define DEFAULT_PARITY      0
 
 #define MAX_FILES   50
-
+#define NUMBER_OF_CHUNK_ERRORS_TO_SHOW 8
 #define SERIAL_READ_RESPONSE_MS 40
 
 #define LC3_CMD_QUERY	"\x1bQ"
@@ -122,6 +122,7 @@ int opt_start_address = -1;
 int arg_chunk_size = 0;
 char * arg_program_files[MAX_FILES];
 int arg_files_count;
+int arg_retransmit_retry = 2;
 
 char * arg_com_port = DEFAULT_SERIAL_PORT;
 int arg_baud_rate = DEFAULT_BAUD_RATE;
@@ -443,10 +444,14 @@ int check_file_chunk(HANDLE hCom, HANDLE hProg, int file_offset, int lc3_offset,
 			for (i=0; i < bytesRead; i++) {
 				if (buff[i] != lc3_buff[i]) {
 					(*pErr_cnt)++;
-					if (*pErr_cnt < 16) {
+					if (*pErr_cnt < NUMBER_OF_CHUNK_ERRORS_TO_SHOW) {
 						local_message("\r Error at byte %d (send:0x%02x, received:0x%02x)                 \n",
 								file_offset+(chunk_size-remain)+i, buff[i], lc3_buff[i]);
+					} else if (*pErr_cnt == NUMBER_OF_CHUNK_ERRORS_TO_SHOW) {
+						local_message("\r Error at byte %d (send:0x%02x, received:0x%02x) (next errors will not be reported)\n",
+								file_offset+(chunk_size-remain)+i, buff[i], lc3_buff[i]);
 					}
+
 				}
 			}
 
@@ -461,7 +466,7 @@ int check_file_chunk(HANDLE hCom, HANDLE hProg, int file_offset, int lc3_offset,
 }
 
 int program_device(HANDLE hCom, const char *program_file) {
-	int err_cnt;
+	int err_cnt, chunk_err_cnt, try, failed_chunks;
 	const int nbuff_words = 1024;
 	unsigned char buff[nbuff_words*2];
 	unsigned short progStart;
@@ -506,28 +511,44 @@ int program_device(HANDLE hCom, const char *program_file) {
 		      program_file, progSize/2, progStart);
 
 	remain = progSize;
+	err_cnt = failed_chunks = 0;
 	chunk_size = (arg_chunk_size) ? arg_chunk_size : remain;
 	file_pos = 2;
 	lc3_pos = progStart*2;  // scale LC3 offset from words to bytes
 	while (remain) {
 		part = min(remain, chunk_size);
 
+		try = 0;
+	Retry:
 		if (send_file_chunk(hCom, hProg, file_pos, lc3_pos, part, progSize-remain, progSize) < 0) {
 			CloseHandle(hProg);
 			return -1;
 		}
 		local_message("\r%3d%% complete     --  %5lu of %5lu bytes send              ",
-			       (int)((progSize-remain+part)*100/progSize), progSize-remain+part, progSize);
+				   (int)((progSize-remain+part)*100/progSize), progSize-remain+part, progSize);
 		if (!opt_no_program_check) {
-			//local_message("\n\nComparing \"%s\" with %u words starting from x%04x\n",
-			//		  program_file, progWords, progStart);
-			if (check_file_chunk(hCom, hProg, file_pos, lc3_pos, part, &err_cnt, progSize-remain, progSize) < 0) {
+			chunk_err_cnt = 0;
+			if (check_file_chunk(hCom, hProg, file_pos, lc3_pos, part, &chunk_err_cnt, progSize-remain, progSize) < 0) {
 				CloseHandle(hProg);
 				return -1;
+			} else if (chunk_err_cnt != 0) {
+				if (try < arg_retransmit_retry) {
+					try++;
+					local_message("\r%d errors discovered in chunk. Trying to retransmit (%d time)\n", chunk_err_cnt, try);
+					goto Retry;
+				} else {
+					local_message("\r%d errors discovered in chunk. %d retransmissions failed.\n", chunk_err_cnt, try);
+					err_cnt += chunk_err_cnt;
+					failed_chunks++;
+				}
+			} else {
+				local_message( (try
+								? "\rRetransmission successful.                                      \n"
+								: "\r%3d%% complete     --  %5lu of %5lu bytes verified              "),
+						(int)((progSize-remain+part)*100/progSize), (progSize-remain+part), progSize);
 			}
-			local_message("\r%3d%% complete     --  %5lu of %5lu bytes verified              ",
-					(int)((progSize-remain+part)*100/progSize), (progSize-remain+part), progSize);
 		}
+
 		remain -= part;
 		file_pos += part;
 		lc3_pos += part;
@@ -536,11 +557,17 @@ int program_device(HANDLE hCom, const char *program_file) {
 	local_message("\n");
 
 
-	if (err_cnt > 0) {
-		local_message("WARNING: %d errors discovered during verification of \"%s\"\n", err_cnt, program_file);
-		//local_message("ERROR: %d errors discovered during verification of \"%s\"\n", err_cnt, program_file);
-		//CloseHandle(hProg);
-		//return -1;
+	if (!opt_no_program_check) {
+		if (err_cnt == 0) {
+			local_message("\n\n No errors found in final transmission of \"%s\" \n\n", program_file);
+		} else {
+			local_message("\nWARNING:"
+						  "\nWARNING: %d errors in %d chunks NOT-FIXED during retransmission of \"%s\""
+						  "\nWARNING:\n", err_cnt, failed_chunks, program_file);
+			//local_message("ERROR: %d errors discovered during verification of \"%s\"\n", err_cnt, program_file);
+			//CloseHandle(hProg);
+			//return -1;
+		}
 	}
 	if (GetLastError() != ERROR_SUCCESS) {
 		local_message("Read of \"%s\" failed with error %lu\n", program_file, GetLastError());
