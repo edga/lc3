@@ -119,6 +119,7 @@ void wait_and_quit() {
 int opt_program_only = 0;
 int opt_no_program_check = 0;
 int opt_start_address = -1;
+int arg_chunk_size = 0;
 char * arg_program_files[MAX_FILES];
 int arg_files_count;
 
@@ -127,13 +128,15 @@ int arg_baud_rate = DEFAULT_BAUD_RATE;
 int arg_parity = DEFAULT_PARITY;
 
 void usage(const char *progname) {
-	local_message("\nUsage: %s [-p][-n] [-s BAUD:PARITY:COMPORT] [LC3_OBJ_FILES]\n"
+	local_message("\nUsage: %s [-p][-n][-c CHUNK_SIZE] [-s BAUD:PARITY:COMPORT] [ [LC3_OBJ_FILES]\n"
 					  "  -p: program only. Don't ask LC3 to start uploaded program,\n"
 					  "      and don't launch terminal.\n"
 					  "  -n: no program check. Don't ask LC3 to send back uploaded program,\n"
+					  "  -c: upload files in chunks instead of whole file at a time,\n"
 					  "  -s: Change default serial settings (3 colon separated fields)\n"
 					  "      Valid parity codes: (%d: EVENPARITY, %d: MARKPARITY, %d: NOPARITY, %d: ODDPARITY, %d: SPACEPARITY)\n"
 					  "      Default port settings:     -s %d:%d:%s\n"
+					  ""
 					  "  if LC3_OBJ_FILES are missing programming step is skipped.\n"
 					  "  if -p is missing, the last object file specified is started after upload.\n"
 					  "\n"
@@ -196,6 +199,12 @@ void parse_options(int argc, char **argv){
 		} else if (argv[ap][1] == 'n' && !argv[ap][2]) {
 			opt_no_program_check = 1;
 			ap++;
+		} else if (argv[ap][1] == 'c' && !argv[ap][2]) {
+			if (sscanf(argv[ap+1], "%d", &arg_chunk_size) != 1) {
+				local_message("Error: option -c expects natural number as CHUNK_SIZE\n\n");
+				usage_error = 1;
+			}
+			ap +=2;
 		} else if (argv[ap][1] == 's' && !argv[ap][2]) {
 			if (parse_port(argv[ap+1])) {
 				usage_error = 1;
@@ -300,57 +309,20 @@ int send_serial(HANDLE hCom, char * data, int size) {
 
 /******* Serial programmer **********/
 
-int program_device(HANDLE hCom, const char *program_file) {
-	int err_cnt;
+/*
+ * Wait for LC3 to be ready
+ */
+int wait_lc3_ready(HANDLE hCom) {
+	DWORD bytesRead;
 	int ready;
 	const int nbuff_words = 1024;
 	unsigned char buff[nbuff_words*2];
-	unsigned short progStart, progWords;
-	DWORD progSize;
-	HANDLE hProg;
-	DWORD bytesRead, bytesWritten;
-	DWORD total;
+	int respSize = strlen(LC3_READY_RESPONSE);
 
-	hProg = CreateFile(program_file, GENERIC_READ, FILE_SHARE_READ, NULL,
-			OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
-	if (hProg == INVALID_HANDLE_VALUE) {
-		local_message("Unable to open \"%s\" for reading (error: %lu)\n", program_file, GetLastError());
-		wait_and_quit();
-	}
-
-	progSize = GetFileSize(hProg, NULL);
-
-	if (progSize % 2 || progSize > 0x10000) {
-		local_message("Error: Obj file's size has to be even and fit into LC3 memory\n");
-		CloseHandle(hProg);
-		return -1;
-	}
-
-	if (!ReadFile(hProg, buff, 4, &bytesRead, NULL)
-          || bytesRead<4) {
-		local_message("Error: unable to read \"%s\"\n", program_file);
-		CloseHandle(hProg);
-		return -1;
-	}
-
-	// This is obj file, need to calulate transmission size
-	progWords = progSize/2 - 1;
-	progStart = (buff[0] << 8) + buff[1];
-
-	SetFilePointer(hProg, 0, NULL, FILE_BEGIN);
-	opt_start_address = progStart;
-
-
-	/*
-	 * Wait for LC3 to be ready
-	 */
 	do {
-		int respSize = strlen(LC3_READY_RESPONSE);
-
 		local_message("Quering device...");
 		PurgeComm(hCom, PURGE_RXCLEAR);
 		if (send_serial(hCom, LC3_CMD_QUERY, 2) < 2) {
-			CloseHandle(hProg);
 			return -1;
 		}
 		// Wait some time to allow device to respond
@@ -366,105 +338,203 @@ int program_device(HANDLE hCom, const char *program_file) {
 		}
 	} while (!ready);
 
-	/*
-	 * Upload file
-	 */
-	local_message("\nUploading \"%s\":\n\t%u words starting from x%04x\n",
-		      program_file, progWords, progStart);
-	if (send_serial(hCom, LC3_CMD_UPLOAD, 2) < 2) {
-		CloseHandle(hProg);
+	return 0;
+}
+
+/*
+ * Upload part of the file
+ */
+int send_file_chunk(HANDLE hCom, HANDLE hProg, int file_offset, int lc3_offset, int chunk_size, int progress_done, int progress_whole) {
+	const int nbuff_words = 1024;
+	unsigned char buff[nbuff_words*2];
+	DWORD bytesRead, bytesWritten;
+	DWORD remain;	// how many bytes of this chunk remaining to send
+	DWORD part;	// how many bytes to send in one go (limited by buffer size and remaining data)
+
+	//// Send Upload command:
+	// Header:
+	buff[0] = LC3_CMD_UPLOAD[0];
+	buff[1] = LC3_CMD_UPLOAD[1];
+	// Transmission size: Network order (big-endian) in LC3 words
+	buff[2] = (char)(chunk_size/2 / 256);
+	buff[3] = (char)(chunk_size/2 % 256);
+	// Offset: Network order (big-endian) in LC3 words
+	buff[4] = (char)(lc3_offset/2 / 256);
+	buff[5] = (char)(lc3_offset/2 % 256);
+	if (send_serial(hCom, buff, 6) < 6) {
 		return -1;
 	}
 
-	// This is obj file, need to send transmission size before the data
-	// This has to be send in Network order (big-endian)
-	buff[0] = (char)(progWords / 256);
-	buff[1] = (char)(progWords % 256);
-	if (send_serial(hCom, buff, 2) < 2) {
-		CloseHandle(hProg);
-		return -1;
-	}
-
-	total = 0;
+	SetFilePointer(hProg, file_offset, NULL, FILE_BEGIN);
 	SetLastError(ERROR_SUCCESS);
-	while (ReadFile(hProg, buff, nbuff_words*2, &bytesRead, NULL)
-          && bytesRead!=0) {
-		if ((bytesWritten=send_serial(hCom, buff, bytesRead)) < bytesRead) {
-			SetLastError(ERROR_SUCCESS);
-		} else {
-			total += bytesWritten;
-			local_message("\r%3d%% complete     --  %5lu of %5lu bytes send",
-				       (int)(total*100/progSize), total, progSize);
+	remain = chunk_size;
+	part = min(nbuff_words*2, remain);
+	while (remain &&
+			ReadFile(hProg, buff, part, &bytesRead, NULL)
+			&& bytesRead!=0) {
+		if (bytesRead < part) {
+			local_message("Warning: ReadFile() returned only some of requested data\n");
 		}
+		if ((bytesWritten=send_serial(hCom, buff, bytesRead)) < bytesRead) {
+			// send_serial should have send all requested data
+			return -1;
+		} else {
+			remain -= bytesWritten;
+			local_message("\r%3d%% complete     --  %5lu of %5lu bytes send              ",
+				       (int)((progress_done+chunk_size-remain)*100/progress_whole), (progress_done+chunk_size-remain), progress_whole);
+		}
+		part = min(nbuff_words*2, remain);
+	}
+
+	return (remain) ? -1 : 0;
+}
+
+/*
+ * Check for transmission errors
+ */
+int check_file_chunk(HANDLE hCom, HANDLE hProg, int file_offset, int lc3_offset, int chunk_size, int *pErr_cnt, int progress_done, int progress_whole) {
+	const int nbuff_words = 1024;
+	unsigned char buff[nbuff_words*2];
+	DWORD bytesRead;
+	DWORD remain;	// how many bytes of this chunk remaining to send
+	DWORD part;	// how many bytes to send in one go (limited by buffer size and remaining data)
+
+	// Wait some time to allow device to respond
+	Sleep(200);
+	PurgeComm(hCom, PURGE_RXCLEAR);
+
+	//// Send Memory Download command:
+	// Header:
+	buff[0] = LC3_CMD_GET_MEM[0];
+	buff[1] = LC3_CMD_GET_MEM[1];
+	// Transmission size: Network order (big-endian) in LC3 words
+	buff[2] = (char)(chunk_size/2 / 256);
+	buff[3] = (char)(chunk_size/2 % 256);
+	// Offset: Network order (big-endian) in LC3 words
+	buff[4] = (char)(lc3_offset/2 / 256);
+	buff[5] = (char)(lc3_offset/2 % 256);
+	if (send_serial(hCom, buff, 6) < 6) {
+		return -1;
+	}
+
+	*pErr_cnt = 0;
+	{
+		unsigned char lc3_buff[nbuff_words*2];
+		DWORD lc3_bytesRead;
+		int i;
+
+		// Wait some time to allow device to respond
+		SetFilePointer(hProg, file_offset, NULL, FILE_BEGIN); // Set file pointer at the start of the program (omit offset)
+		SetLastError(ERROR_SUCCESS);
+		remain = chunk_size;
+		part = min(nbuff_words*2, remain);
+		while (remain &&
+				ReadFile(hProg, buff, part, &bytesRead, NULL)
+				&& bytesRead!=0) {
+			if (bytesRead < part) {
+				local_message("Warning: ReadFile() returned only some of requested data\n");
+			}
+			if (!ReadFile(hCom, lc3_buff, bytesRead, &lc3_bytesRead, NULL)
+					|| lc3_bytesRead < bytesRead){
+				local_message("Read from serial failed (received %lu of %d, error: %lu)\n",
+						lc3_bytesRead, bytesRead, GetLastError());
+				return -1;
+			}
+			for (i=0; i < bytesRead; i++) {
+				if (buff[i] != lc3_buff[i]) {
+					(*pErr_cnt)++;
+					if (*pErr_cnt < 16) {
+						local_message("\r Error at byte %d (send:0x%02x, received:0x%02x)                 \n",
+								file_offset+(chunk_size-remain)+i, buff[i], lc3_buff[i]);
+					}
+				}
+			}
+
+			remain -= bytesRead;
+			local_message("\r%3d%% complete     --  %5lu of %5lu bytes verified      ",
+				       (int)((progress_done+chunk_size-remain)*100/progress_whole), (progress_done+chunk_size-remain), progress_whole);
+			part = min(nbuff_words*2, remain);
+		}
+	}
+
+	return 0;
+}
+
+int program_device(HANDLE hCom, const char *program_file) {
+	int err_cnt;
+	const int nbuff_words = 1024;
+	unsigned char buff[nbuff_words*2];
+	unsigned short progStart;
+	DWORD progSize;
+	HANDLE hProg;
+	DWORD bytesRead;
+	DWORD chunk_size, file_pos, lc3_pos, part, remain;
+
+	hProg = CreateFile(program_file, GENERIC_READ, FILE_SHARE_READ, NULL,
+			OPEN_EXISTING, FILE_ATTRIBUTE_READONLY, NULL);
+	if (hProg == INVALID_HANDLE_VALUE) {
+		local_message("Unable to open \"%s\" for reading (error: %lu)\n", program_file, GetLastError());
+		wait_and_quit();
+	}
+
+	progSize = GetFileSize(hProg, NULL);
+	progSize = progSize-2; // lc3_offset from file is counted separately
+
+	if (progSize % 2 || progSize > 0x10000) {
+		local_message("Error: Obj file's size has to be even and fit into LC3 memory\n");
+		CloseHandle(hProg);
+		return -1;
+	}
+
+	if (!ReadFile(hProg, buff, 4, &bytesRead, NULL)
+          || bytesRead<4) {
+		local_message("Error: unable to read \"%s\"\n", program_file);
+		CloseHandle(hProg);
+		return -1;
+	}
+
+	// This is obj file, need to calculate transmission size
+	progStart = (buff[0] << 8) + buff[1];
+	opt_start_address = progStart;
+
+	if (wait_lc3_ready(hCom) < 0) {
+		CloseHandle(hProg);
+		return -1;
+	}
+
+	local_message("\nUploading \"%s\":\n\t%u words starting from x%04x\n",
+		      program_file, progSize/2, progStart);
+
+	remain = progSize;
+	chunk_size = (arg_chunk_size) ? arg_chunk_size : remain;
+	file_pos = 2;
+	lc3_pos = progStart*2;  // scale LC3 offset from words to bytes
+	while (remain) {
+		part = min(remain, chunk_size);
+
+		if (send_file_chunk(hCom, hProg, file_pos, lc3_pos, part, progSize-remain, progSize) < 0) {
+			CloseHandle(hProg);
+			return -1;
+		}
+		local_message("\r%3d%% complete     --  %5lu of %5lu bytes send              ",
+			       (int)((progSize-remain+part)*100/progSize), progSize-remain+part, progSize);
+		if (!opt_no_program_check) {
+			//local_message("\n\nComparing \"%s\" with %u words starting from x%04x\n",
+			//		  program_file, progWords, progStart);
+			if (check_file_chunk(hCom, hProg, file_pos, lc3_pos, part, &err_cnt, progSize-remain, progSize) < 0) {
+				CloseHandle(hProg);
+				return -1;
+			}
+			local_message("\r%3d%% complete     --  %5lu of %5lu bytes verified              ",
+					(int)((progSize-remain+part)*100/progSize), (progSize-remain+part), progSize);
+		}
+		remain -= part;
+		file_pos += part;
+		lc3_pos += part;
+
 	}
 	local_message("\n");
 
-	/*
-	 * Check for transmission errors
-	 */
-	if (!opt_no_program_check) {
-		// Wait some time to allow device to respond
-		Sleep(200);
-		PurgeComm(hCom, PURGE_RXCLEAR);
-		local_message("\nComparing \"%s\" with %u words starting from x%04x\n",
-			      program_file, progWords, progStart);
-		if (send_serial(hCom, LC3_CMD_GET_MEM, 2) < 2) {
-			CloseHandle(hProg);
-			return -1;
-		}
-
-		// Send transmission size // Network order (big-endian)
-		buff[0] = (char)(progWords / 256);
-		buff[1] = (char)(progWords % 256);
-		if (send_serial(hCom, buff, 2) < 2) {
-			CloseHandle(hProg);
-			return -1;
-		}
-		// Send Start Offset // Network order (big-endian)
-		buff[0] = (char)(progStart / 256);
-		buff[1] = (char)(progStart % 256);
-		if (send_serial(hCom, buff, 2) < 2) {
-			CloseHandle(hProg);
-			return -1;
-		}
-
-		err_cnt = 0;
-		{
-			unsigned char lc3_buff[nbuff_words*2];
-			DWORD lc3_bytesRead;
-			int i;
-
-			// Wait some time to allow device to respond
-			total = 0;
-			SetFilePointer(hProg, 2, NULL, FILE_BEGIN); // Set file pointer at the start of the program (omit offset)
-			SetLastError(ERROR_SUCCESS);
-			while (ReadFile(hProg, buff, nbuff_words*2, &bytesRead, NULL)
-		          && bytesRead!=0) {
-			    if (!ReadFile(hCom, lc3_buff, bytesRead, &lc3_bytesRead, NULL)
-			    		|| lc3_bytesRead < bytesRead){
-			    	local_message("Read from serial failed (received %lu of %d, error: %lu)\n",
-			    			lc3_bytesRead, bytesRead, GetLastError());
-					CloseHandle(hProg);
-					return -1;
-			    }
-
-			    for (i=0; i < bytesRead; i++) {
-			    	if (buff[i] != lc3_buff[i]) {
-						err_cnt++;
-						if (err_cnt < 32) {
-								  local_message("\r Error at byte %d (send:0x%02x, received:0x%02x)\n",
-												total+i, buff[i], lc3_buff[i]);
-						}
-			    	}
-			    }
-
-				total += bytesRead;
-				local_message("\r%3d%% complete     --  %5lu of %5lu bytes verified",
-					       (int)(total*100/progSize), total, progSize);
-			}
-		}
-		local_message("\n");
-	}
 
 	if (err_cnt > 0) {
 		local_message("WARNING: %d errors discovered during verification of \"%s\"\n", err_cnt, program_file);
