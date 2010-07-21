@@ -46,6 +46,8 @@
 #define STATE_LABEL(p) ((p)->x.state)
 
 
+#define MIN(x, y) ((x)<(y) ? (x):(y))
+#define MAX(x, y) ((x)<(y) ? (y):(x))
 
 
 /******************************************************************************
@@ -297,6 +299,7 @@ reg: CNSTI1   "# reg\n"  2
 reg: CNSTU1   "# reg\n"  2
 reg: CNSTP1   "# reg\n"  2
 
+spill: ADDRFP1 "%a"					!range(a,-32,31)
 spill: ADDRLP1 "%a"					!range(a,-32,31)
 stmt: ASGNI1(spill,reg)  "#str %1, %0\n"  3
 stmt: ASGNU1(spill,reg)  "#str %1, %0\n"  3
@@ -426,6 +429,65 @@ stmt: ASGNB(reg,INDIRB(reg))  "#asgnb\n"  10
 
 #define ck(i) return (i) ? 0 : LBURG_MAX
 
+
+/******************************************************************************
+ * 	lc3_store_far_on_stack
+ *	    Implements general case  "STR R[srcReg], R5, #bigOffset"
+ *  
+ *	FixMe: Use efficient constant calculation in other places also		
+ *	Warning: This code is not interrupt friendly (stack storage is used without updating R6). Nothing is done about it, because the same problem is in whole code, and has to be fixed systematically anyway.
+ ******************************************************************************/
+static void lc3_store_far_on_stack(int srcReg, int bigOffset) {
+	int i, offset;
+
+	/* Simple case: can load offset directly in STR */
+	if (-32 <= bigOffset && bigOffset <= 31) {
+		lc3_store(srcReg,5,bigOffset);
+		return;
+	}
+
+	/* Complicated: Need to calculate the address first.
+	 * will need to spill R4 on stack because temporary register is needed */
+	lc3_store(4,6,-1);	// spill R4 on stack
+
+	i=bigOffset;
+	if ((i > 0 && i > 4*15) || (i < 0 && i < -4*16)) {   /* It's cheaper to load offset from instruction stream */
+		print("BR #1\n"
+			".FILL #%d\n"
+			"LD R4, #-2\n"
+			"ADD R4, R5, R4\n", i+offset);
+		offset = 0; // Full address in R4
+	} else if (i>0) { /* Is it cheaper to calculate offset */
+		/* Calculate how much can we use as an offset in STR instruction */
+		offset = MIN(i,31);
+		i -= offset;
+
+		if (i <= 15) {
+			lc3_addimm(4,5,i);
+		} else {
+			lc3_addimm(4,5,15);
+			for(i-=15;i>15;i-=15)
+				lc3_addimm(4,4,15);
+			lc3_addimm(4,4,i);
+		}
+	} else { /* i < 0 */
+		/* Calculate how much can we use as an offset in STR instruction */
+		offset = MAX(i,-32);
+		i -= offset;
+
+		if (i >= -16) {
+			lc3_addimm(4,5,i);
+		} else {
+			lc3_addimm(4,5,-16);
+			for(i+=16;i<-16;i+=16)
+				lc3_addimm(4,4,-16);
+			lc3_addimm(4,4,i);
+		}
+	}
+	lc3_store(srcReg,4,offset);
+
+	lc3_load(4,6,-1);	// restore R4
+}
 
 /******************************************************************************
  * 	prologue(p,&x,&y,&z,&yflag,&destflag)
@@ -670,24 +732,20 @@ static void emit2(Node p) {
 					lc3_addimm(6,6,15);
 				lc3_addimm(6,6,i);
 			}
+
 			break;
 
 /***********Handles spilling a register*********************************/
 /*does it without telling the back end to allocate another register*/
-		case ASGN+U: case ASGN+I:
-			if( specific(LEFT_CHILD(p)->op) == VREG+ P)
+		case ASGN+U: case ASGN+I: case ASGN+P:
+			if( specific(LEFT_CHILD(p)->op) == VREG+ P) {
+				print("; Warning: ASGN+U/I/P\n");
 				break;
-			print(";spilling %d\n",atoi (LEFT_CHILD(p)->syms[0]->x.name));
+			}
+			print("; <spilling %d>\n",atoi (LEFT_CHILD(p)->syms[0]->x.name));
 			i=atoi(LEFT_CHILD(p)->syms[0]->x.name);
-			lc3_store(4,6,-1);
-
-			lc3_addimm(4,5,-16);
-
-			for(i+=16;i<-16;i+=16)
-				lc3_addimm(4,4,-16);
-
-			lc3_store(getregnum(RIGHT_CHILD(p)),4,i);
-			lc3_load(4,6,-1);
+			lc3_store_far_on_stack(getregnum(RIGHT_CHILD(p)), i);
+			print("; </spilling %d>\n",atoi (LEFT_CHILD(p)->syms[0]->x.name));
 			break;
 
 /***********Conditional Branches---note: unsigned ones dont always work*****/
@@ -1212,7 +1270,11 @@ static void emit2(Node p) {
 		case RET+F:
 			error("Floating point is not supported!\n");
 			break;
-
+		default:
+			print("; WARNING: Unexpected node (%d) passed to emit2()\n",p->op);
+			if (p->op != 1269) { // FixMe: Investigate why RETI1 comes here. We hide this from user, because it is probably handled elsewhere
+				warning("Compiler internals: Unexpected node (%d) passed to emit2(), this might lead to ommited code.\n",p->op);
+			}
 	}
 }
 /************************************************************

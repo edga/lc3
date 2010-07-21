@@ -701,7 +701,7 @@ main (int argc, char *argv[])
          else { /* i < 0 */
             /* Calculate how much can we use as an offset in LDR instruction */
             offset = with_LDR ? MAX(i,-32) : 0;
-            i += offset;
+            i -= offset;
             if (i >= -4*16) { /* Is it cheaper to calculate offset */
                if (with_LDR && i==0) /* skip it if we can load offset directly in LDR */
                   fprintf(output_file, "LDR R%d, R4, #%d\n", reg_num, offset);
