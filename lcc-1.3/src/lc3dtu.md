@@ -1272,9 +1272,10 @@ static void emit2(Node p) {
 			break;
 		default:
 			print("; WARNING: Unexpected node (%d) passed to emit2()\n",p->op);
-			if (p->op != 1269) { // FixMe: Investigate why RETI1 comes here. We hide this from user, because it is probably handled elsewhere
-				warning("Compiler internals: Unexpected node (%d) passed to emit2(), this might lead to ommited code.\n",p->op);
-			}
+         // Disabled because of too many warnings
+			// if (p->op != 1269) { // FixMe: Investigate why RETI1 comes here. We hide this from user, because it is probably handled elsewhere
+			// 	warning("Compiler internals: Unexpected node (%d) passed to emit2(), this might lead to ommited code.\n",p->op);
+			// }
 	}
 }
 /************************************************************

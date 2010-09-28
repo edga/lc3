@@ -1247,9 +1247,10 @@ static void emit2(Node p) {
 			break;
 		default:
 			print("; WARNING: Unexpected node (%d) passed to emit2()\n",p->op);
-			if (p->op != 1269) { // FixMe: Investigate why RETI1 comes here. We hide this from user, because it is probably handled elsewhere
-				warning("Compiler internals: Unexpected node (%d) passed to emit2(), this might lead to ommited code.\n",p->op);
-			}
+         // Disabled because of too many warnings
+			// if (p->op != 1269) { // FixMe: Investigate why RETI1 comes here. We hide this from user, because it is probably handled elsewhere
+			// 	warning("Compiler internals: Unexpected node (%d) passed to emit2(), this might lead to ommited code.\n",p->op);
+			// }
 	}
 }
 /************************************************************
@@ -1562,7 +1563,7 @@ static void stabsym(Symbol p) {
 }
 
 Interface lc3IR = {
-	1, 1, 1,  /* char */
+	1, 1, 1,  /* char */    // Edgar: 3rd param outofline is set, so forbids constant to apear in DAGs
 	1, 1, 1,  /* short */
 	1, 1, 1,  /* int */
 	1, 1, 1,  /* long */
@@ -1576,7 +1577,7 @@ Interface lc3IR = {
 	0,  /* mulops_calls 1=hardware does not implement mul,div,rem */
 	0,  /* 0 = no wants_callb */
 	1,  /* 1 = wants_argb */
-	0,  /* 0 = no left_to_right */
+	0,  /* 0 = no left_to_right */	// Edgar: why should arguments be evaluated/passed right to left?
 	0,  /* wants_dag  */
 	0,  /* 0 = signed_char */
 	address,
