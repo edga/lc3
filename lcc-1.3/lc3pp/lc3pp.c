@@ -314,8 +314,10 @@ resolve_externs(FILE** files, link_list link, int argc)
                break;	/*done*/
          }
       }
-      else if( (files[argc-1] = fopen(buf, "r")) == NULL)
-         printf("error reading file %s\n",buf);
+      else if( (files[argc-1] = fopen(buf, "r")) == NULL) {
+         printf("error: can't resolve external function, failed to open %s file\n",buf);
+         exit(-1);
+      }
       else {
          while(1) {
             buf[0] = fgetc(files[argc-1]);
