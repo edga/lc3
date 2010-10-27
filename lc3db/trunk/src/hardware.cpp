@@ -19,31 +19,72 @@
 
 #include <stdio.h>
 #include <termios.h>
+#include <sys/types.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include "cpu.hpp"
 #include "memory.hpp"
 #include "hardware.hpp"
 
+
+static int data_available (int fd)
+{
+  struct timeval tv;
+  fd_set rdfs;
+
+  tv.tv_sec = 0;
+  tv.tv_usec = 0;
+
+  FD_ZERO(&rdfs);
+  FD_SET (fd, &rdfs);
+
+  int ret = select(fd+1, &rdfs, NULL, NULL, &tv);
+//  printf("sel(%d): %d\n", fd, ret);
+  return FD_ISSET(fd, &rdfs);
+
+}
+
 struct KBSR : public MappedWord
 {
   enum { ADDRESS = 0xFE00 };
-  operator int16_t() const { return 0x8000; }
+  KBSR() {
+    fd = fileno(stdin);
+  }
+  operator int16_t() const {
+    return data_available(fd) ? 0x8000 : 0;
+  }
+
+  void set_tty(int _fd) {
+    fd = _fd;
+  }
+
+private:
+  int fd;
 };
 
 struct KBDR : public MappedWord
 {
   enum { ADDRESS = 0xFE02 };
+  KBDR() {
+    fd = fileno(stdin);
+  }
 
   operator int16_t() const {
-    struct termios new_term, old_term;
-    tcgetattr(fileno(stdin), &old_term);
-    new_term = old_term;
-    new_term.c_lflag &= ~(ICANON | ECHO);
-    tcsetattr(fileno(stdin), TCSAFLUSH, &new_term);
-    int ret = getchar();
-    tcsetattr(fileno(stdin), TCSAFLUSH, &old_term);
-    return ret;
+    static unsigned char prev_char;
+    // Note: terminal is setup in Hardware class
+    if (data_available(fd)) {
+      int ret = read(fd,&prev_char, 1);
+ //     printf("read(%d): %d = %d\n", fd, ret, prev_char);
+    }
+    return prev_char;
   }
+
+  void set_tty(int _fd) {
+    fd = _fd;
+  }
+
+private:
+  int fd;
 };
 
 struct DSR : public MappedWord
@@ -119,7 +160,7 @@ class Hardware::Implementation
 {
 public:
   Implementation(Memory &mem, LC3::CPU &cpu) : 
-    mem(mem), mcr(ccr, cpu)
+    mem(mem), mcr(ccr, cpu), ifd(-1), ofd(-1)
   {
     mem.register_dma(KBSR::ADDRESS, &kbsr);
     mem.register_dma(KBDR::ADDRESS, &kbdr);
@@ -127,13 +168,42 @@ public:
     mem.register_dma(DDR::ADDRESS, &ddr);
     mem.register_dma(MCR::ADDRESS, &mcr);
     mem.register_dma(CCR::ADDRESS, &ccr);
+    // Set the terminal to non-echo mode
+    set_tty(fileno(stdin), fileno(stdout));
+
+  }
+
+  void set_tty(int _ifd, int _ofd) {
+    setup_input_tty(_ifd);
+    kbsr.set_tty(_ifd);
+    kbdr.set_tty(_ifd);
+
+    ddr.set_tty(_ofd);
+    ofd = _ofd;
   }
 
   void set_tty(int fd) {
-    ddr.set_tty(fd);
+    set_tty(fd, fd);
+  }
+  
+  void setup_input_tty(int fd) {
+    struct termios new_termios = {0,};
+    if (ifd != -1) {
+      // restore previous settings
+      tcsetattr(ifd, TCSANOW, &termios_original);
+    }
+    tcgetattr(fd, &new_termios);
+    termios_original = new_termios;
+    new_termios.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(fd, TCSAFLUSH, &new_termios);
+    ifd = fd;
   }
 
+
 private:
+  int ifd;
+  int ofd;
+  struct termios termios_original;
   Memory &mem;
   KBSR kbsr;
   KBDR kbdr;

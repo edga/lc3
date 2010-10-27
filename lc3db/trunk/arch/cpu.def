@@ -24,6 +24,7 @@
 #error This file is not meant to be compiled directly
 #endif
 
+#include <stdio.h>
 #include <stdint.h>
 #include "cpu.hpp"
 #include "util.hpp"

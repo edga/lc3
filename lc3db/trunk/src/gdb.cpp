@@ -55,6 +55,9 @@ const char * HELP =
 " compile <filename.asm>\n"
 "   Assembles filename.asm.\n\n"
 
+" tty <terminal_device>\n"
+"   Use pseudoterminal instead of stdin/stdout.\n\n"
+
 " break (b) <addr|sym>\n"
 "   Set breakpoint at address <addr> or at the label indicated by sym.\n\n"
 
@@ -293,6 +296,9 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       incmd >> param1;
       const char *args[] = { "", param1.c_str(), NULL };
       lc3_asm(2, args);
+    } else if (cmdstr == "tty") {
+      incmd >> param1;
+      hw.set_tty(open(param1.c_str(), O_RDWR));
     } else if (cmdstr == "continue" || cmdstr == "c" || cmdstr=="cont") {
       printf("foo\n");
       instructions_to_run = 0x7FFFFFFF;

@@ -1,4 +1,5 @@
 /*\
+ * vim: sw=2 si:
  *  LC-3 Simulator
  *  Copyright (C) 2004  Anthony Liguori <aliguori@cs.utexas.edu>
  *
@@ -22,6 +23,9 @@
 #include <getopt.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "cpu.hpp"
 #include "memory.hpp"
@@ -117,7 +121,7 @@ int main(int argc, char **argv)
       printf("%s\n%s\n", PROGRAM, COPYRIGHT);
       exit(0);
       break;
-    case 'i':
+    case 'I':
       {
 	char buffer[1024];
 	sprintf(buffer, "%s/.lc3db", getenv("HOME"));
@@ -188,6 +192,29 @@ int main(int argc, char **argv)
 
   if (!quiet_mode) {
     printf("%s\n%s\n%s\n", PROGRAM, COPYRIGHT, INFO);
+  }
+
+  // Creating a terminal
+  {
+    FILE *tmpF = popen("3>&1 xterm -title 'LC3 terminal' -e sh -c 'tty 1>&3; sleep 100000'", "r");
+    if (tmpF) {
+      char buf[256];
+      char *ret;
+      ret = fgets(buf, sizeof(buf), tmpF);
+      if (ret) {
+	while(*ret){
+	  if (*ret == '\n' || *ret == '\r') {
+	    *ret = 0;
+	    break;
+	  }
+	  ret++;
+	}
+    	fprintf(stderr, "tty: %s\n", buf);
+	hw.set_tty(open(buf, O_RDWR));
+      }
+    } else {
+	printf("popen failed\n");      
+    }
   }
 
   return gdb_mode(cpu, mem, hw, gui_mode, quiet_mode);

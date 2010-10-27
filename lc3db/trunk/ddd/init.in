@@ -33,7 +33,7 @@ Ddd*allRegisters: off
 ! Misc preferences.
 Ddd*keyboardFocusPolicy: POINTER
 Ddd*statusAtBottom: on
-Ddd*suppressWarnings: off
+Ddd*suppressWarnings: on
 Ddd*warnIfLocked: off
 Ddd*checkGrabs: on
 Ddd*saveHistoryOnExit: on

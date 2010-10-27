@@ -44,7 +44,8 @@ lc3db.1: bin/lc3db
 	help2man -N bin/lc3db > lc3db.1
 
 install: bin/lc3db lib/los.obj #lc3db.1
-	install -D bin/lc3db $(PREFIX)/bin/lc3db
+	install -D lc3db.sh $(PREFIX)/bin/lc3db
+	install -D bin/lc3db $(PREFIX)/bin/lc3db.bin
 	install -D lib/los.obj $(PREFIX)/lib/los.obj
 	install -D lib/los.dbg $(PREFIX)/lib/los.dbg
 	#install -D lc3db.1 $(PREFIX)/share/man/man1/lc3db.1
