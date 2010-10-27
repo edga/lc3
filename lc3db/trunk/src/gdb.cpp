@@ -19,6 +19,7 @@
 \*/
 
 #include <stdio.h>
+#include <signal.h>
 #if defined(USE_READLINE)
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -143,6 +144,16 @@ uint16_t load_prog(const char *file, Memory &mem)
   return ret;
 }
 
+static int instructions_to_run = 0;
+void sigproc(int sig)
+{
+  signal(SIGINT, sigproc); /* reset for portability */
+  fprintf(stderr, "<Interrupted>\n");
+  instructions_to_run = 1;
+  // TODO: make proper synchronization to avoid race conditions
+}
+
+
 int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 	     bool gui_mode, bool quiet_mode)
 {
@@ -187,8 +198,9 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
     cpu.decode(mem[cpu.PC]);
   }
 
+  signal(SIGINT, sigproc);
   while ((cmd = readline(quiet_mode ? "(gdb) " : "(gdb) "))) try {
-    int instructions_to_run = 0;
+    instructions_to_run = 0;
 
     if (!*cmd) cmd = last_cmd.c_str();
 #if defined(USE_READLINE)
@@ -300,7 +312,7 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       incmd >> param1;
       hw.set_tty(open(param1.c_str(), O_RDWR));
     } else if (cmdstr == "continue" || cmdstr == "c" || cmdstr=="cont") {
-      printf("foo\n");
+      printf("running\n");
       instructions_to_run = 0x7FFFFFFF;
     } else if (cmdstr == "disassemble" || cmdstr == "dasm") {
       incmd >> param1 >> param2;

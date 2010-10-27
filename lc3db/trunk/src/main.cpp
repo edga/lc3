@@ -194,8 +194,9 @@ int main(int argc, char **argv)
     printf("%s\n%s\n%s\n", PROGRAM, COPYRIGHT, INFO);
   }
 
-  // Creating a terminal
-  {
+  // Terminal creation disabled, because it is buildin ddd
+  if (0){
+    // Create a terminal
     FILE *tmpF = popen("3>&1 xterm -title 'LC3 terminal' -e sh -c 'tty 1>&3; sleep 100000'", "r");
     if (tmpF) {
       char buf[256];
