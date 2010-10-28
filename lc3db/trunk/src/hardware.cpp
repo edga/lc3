@@ -172,6 +172,12 @@ public:
     set_tty(fileno(stdin), fileno(stdout));
 
   }
+  ~Implementation() {
+    if (ifd != -1) {
+      // restore previous settings
+      tcsetattr(ifd, TCSANOW, &termios_original);
+    }
+  }
 
   void set_tty(int _ifd, int _ofd) {
     setup_input_tty(_ifd);

@@ -46,8 +46,9 @@ lc3db.1: bin/lc3db
 install: bin/lc3db lib/los.obj #lc3db.1
 	install -D lc3db.sh $(PREFIX)/bin/lc3db
 	install -D bin/lc3db $(PREFIX)/bin/lc3db.bin
-	install -D lib/los.obj $(PREFIX)/lib/los.obj
-	install -D lib/los.dbg $(PREFIX)/lib/los.dbg
+	install -D lib/los.obj $(PREFIX)/lib/lc3db/los.obj
+	install -D lib/los.dbg $(PREFIX)/lib/lc3db/los.dbg
+	install -D ddd/init $(PREFIX)/share/lc3db/ddd/init
 	#install -D lc3db.1 $(PREFIX)/share/man/man1/lc3db.1
 
 distclean: really clean

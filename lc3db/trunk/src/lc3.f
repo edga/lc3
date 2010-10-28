@@ -49,6 +49,9 @@ part of the label?  Currently I allow only alpha followed by alphanum and _.
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
+#include <limits.h>
+
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
@@ -451,28 +454,103 @@ bad_line ()
     new_inst_line ();
 }
 
+/* Internal function
+ */
 static int
-read_val (const char* s, int* vptr, int bits)
+read_raw_val (const char* s, long * vptr)
 {
     char* trash;
     long v;
 
+    errno = 0;    /* To distinguish success/failure after call */
     if (*s == 'x' || *s == 'X')
-	v = strtol (s + 1, &trash, 16);
+        v = strtol (++s, &trash, 16);
     else {
-	if (*s == '#')
-	    s++;
-	v = strtol (s, &trash, 10);
+        if (*s == '#')
+            s++;
+        v = strtol (s, &trash, 10);
     }
-    if (v >= 0x8000)
-        v |= 0xFFFF0000;
+
+    /* check for strtol() failure */
+    if ( s == trash
+            || (errno == ERANGE && (v == LONG_MAX || v == LONG_MIN))
+            || (errno != 0 && v == 0)) {
+        fprintf (stderr, "%3d: cant recognise the number (%s)\n", line_num, s);
+        num_errors++;
+        return -1;
+    }
+
+    if (0x10000 > v && 0x8000 <= v)
+        v |= -65536L;   /* handles 64-bit longs properly */
+
+    *vptr = v;
+    return 0;
+}
+
+/* Read value.
+   Format (signed/unsigned) is irrelevant as long value fits in size specified
+   */
+static int
+read_val (const char* s, int* vptr, int bits)
+{
+    long v;
+    if (read_raw_val(s, &v))
+	return -1;
+
     if (v < -(1L << (bits - 1)) || v >= (1L << bits)) {
-	fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+        fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+        num_errors++;
+        return -1;
+    }
+    if ((v & (1UL << (bits - 1))) != 0)
+        v |= ~((1UL << bits) - 1);
+    *vptr = v;
+    return 0;
+}
+
+/* Read value.
+   It must fit into signed integer of specified size.
+   */
+static int
+read_signed_val (const char* s, int* vptr, int bits)
+{
+    long v;
+    if (read_raw_val(s, &v))
+	return -1;
+
+    if (v < -(1L << (bits - 1)) || v >= (1L << (bits-1))) {
+        fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+        num_errors++;
+        return -1;
+    }
+    if ((v & (1UL << (bits - 1))) != 0)
+        v |= ~((1UL << bits) - 1);
+    *vptr = v;
+    return 0;
+}
+
+/* Read value.
+   It must fit into unsigned integer of specified size.
+   */
+static int
+read_unsigned_val (const char* s, int* vptr, int bits)
+{
+    long v;
+    if (read_raw_val(s, &v))
+	return -1;
+
+    if (v < 0) {
+	fprintf (stderr, "%3d: unsigned constant expected\n", line_num);
 	num_errors++;
 	return -1;
     }
-    if ((v & (1UL << (bits - 1))) != 0)
-	v |= ~((1UL << bits) - 1);
+
+    if (v >= (1L << (bits))) {
+        fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+        num_errors++;
+        return -1;
+    }
+
     *vptr = v;
     return 0;
 }
@@ -606,7 +684,7 @@ generate_instruction (operands_t operands, const char* opstr)
     if ((pre_parse[operands] & PP_R3) != 0)
         r3 = o3[1] - '0';
     if ((pre_parse[operands] & PP_I2) != 0)
-        (void)read_val (o2, &val, 9);
+        (void)read_signed_val (o2, &val, 9);
     if ((pre_parse[operands] & PP_L2) != 0)
         val = find_label (o2, 9);
 
@@ -616,7 +694,7 @@ generate_instruction (operands_t operands, const char* opstr)
 	    if (operands == O_RRI) {
 	    	/* Check or read immediate range (error in first pass
 		   prevents execution of second, so never fails). */
-	        (void)read_val (o3, &val, 5);
+	        (void)read_signed_val (o3, &val, 5);
 		write_value (0x1020 | (r1 << 9) | (r2 << 6) | (val & 0x1F), 1);
 	    } else
 		write_value (0x1000 | (r1 << 9) | (r2 << 6) | r3, 1);
@@ -625,14 +703,14 @@ generate_instruction (operands_t operands, const char* opstr)
 	    if (operands == O_RRI) {
 	    	/* Check or read immediate range (error in first pass
 		   prevents execution of second, so never fails). */
-	        (void)read_val (o3, &val, 5);
+	        (void)read_signed_val (o3, &val, 5);
 		write_value (0x5020 | (r1 << 9) | (r2 << 6) | (val & 0x1F), 1);
 	    } else
 		write_value (0x5000 | (r1 << 9) | (r2 << 6) | r3, 1);
 	    break;
 	case OP_BR:
 	    if (operands == O_I)
-	        (void)read_val (o1, &val, 9);
+	        (void)read_signed_val (o1, &val, 9);
 	    else /* O_L */
 	        val = find_label (o1, 9);
 	    write_value (inst.ccode | (val & 0x1FF), 1);
@@ -642,7 +720,7 @@ generate_instruction (operands_t operands, const char* opstr)
 	    break;
 	case OP_JSR:
 	    if (operands == O_I)
-	        (void)read_val (o1, &val, 11);
+	        (void)read_signed_val (o1, &val, 11);
 	    else /* O_L */
 	        val = find_label (o1, 11);
 	    write_value (0x4800 | (val & 0x7FF), 1);
@@ -657,7 +735,7 @@ generate_instruction (operands_t operands, const char* opstr)
 	    write_value (0xA000 | (r1 << 9) | (val & 0x1FF), 1);
 	    break;
 	case OP_LDR:
-	    (void)read_val (o3, &val, 6);
+	    (void)read_signed_val (o3, &val, 6);
 	    write_value (0x6000 | (r1 << 9) | (r2 << 6) | (val & 0x3F), 1);
 	    break;
 	case OP_LEA:
@@ -676,12 +754,12 @@ generate_instruction (operands_t operands, const char* opstr)
 	    write_value (0xB000 | (r1 << 9) | (val & 0x1FF), 1);
 	    break;
 	case OP_STR:
-	    (void)read_val (o3, &val, 6);
+	    (void)read_signed_val (o3, &val, 6);
 	    write_value (0x7000 | (r1 << 9) | (r2 << 6) | (val & 0x3F), 1);
 	    break;
 	case OP_TRAP:
-	    (void)read_val (o1, &val, 8);
-	    write_value (0xF000 | (val & 0xFF), 1);
+	    (void)read_unsigned_val (o1, &val, 8);
+	    write_value (0xF000 | (val & 0xFF),1);
 	    break;
 
 	/* Generate trap pseudo-ops. */
