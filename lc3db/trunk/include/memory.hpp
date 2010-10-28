@@ -21,6 +21,7 @@
 #define _MEMORY_HPP
 
 #include <string>
+#include <vector>
 #include <map>
 #include <stdint.h>
 
@@ -39,6 +40,17 @@ private:
   MappedWord *mapped;
 };
 
+struct SourceLocation
+{
+  int fileId;
+  int lineNo;
+
+  SourceLocation() :
+    fileId(0),lineNo(-1) {}
+  SourceLocation(const int _fileId,const int _lineNo) :
+    fileId(_fileId),lineNo(_lineNo) {}
+};	
+
 class Memory {
 public:
   Memory();
@@ -48,7 +60,14 @@ public:
   uint16_t load(const std::string &filename);
   void cycle();
   void register_dma(uint16_t address, MappedWord *word);
-  std::map<uint16_t, std::string> debug;
+  int add_source_file(std::string filePath); 
+  void add_source_line(uint16_t address, int fileId, int lineNo); 
+  const char * find_source_path(uint16_t address); 
+  uint16_t find_address(std::string fileName, int lineNo); 
+  std::map<uint16_t, SourceLocation> sources; // lc3 address => source file location
+  std::vector<std::string> fileNames;	// fileID => short file name
+  std::vector<std::string> filePaths;	// fileID => full path
+  std::vector<std::vector<uint16_t> > addresses; // source file location => lc3 address (addresses[fileId][lineNo])
   std::map<std::string, uint16_t> symbol;
 
 private:

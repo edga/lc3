@@ -16,8 +16,6 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
- * vim: sw=2 si:
 \*/
 
 #include <stdio.h>
@@ -123,17 +121,19 @@ uint16_t load_prog(const char *file, Memory &mem)
 
   fgets(source, sizeof(source), f);
   source[strlen(source) - 1] = 0;
+  int fileId = mem.add_source_file(std::string(source));
 
   while (!feof(f)) {
     if (fgetc(f) != '!') {
       if (2 == fscanf(f, "%d:%x\n", &linenum, &addr)) {
-	char buf[10];
-	sprintf(buf, "%d", linenum);
-	std::string str = source;
-	str += ":";
-	str += buf;
-	str += ":0";
-	mem.debug[addr & 0xFFFF] = str;
+	// char buf[10];
+	// sprintf(buf, "%d", linenum);
+	// std::string str = source;
+	// str += ":";
+	// str += buf;
+	// str += ":0";
+	// mem.debug[addr & 0xFFFF] = str;
+	mem.add_source_line(addr & 0xFFFF, fileId, linenum);
       }
     } else {
       char label[4096];
@@ -155,6 +155,17 @@ void sigproc(int sig)
   // TODO: make proper synchronization to avoid race conditions
 }
 
+void show_execution_position(LC3::CPU &cpu, Memory &mem, bool gui_mode, bool quiet_mode)
+{
+  if (gui_mode) {
+    printf(MARKER "%s:beg:0x%.4x\n", 
+	   //mem.debug[cpu.PC].c_str(), cpu.PC & 0xFFFF);
+	   mem.find_source_path(cpu.PC), cpu.PC & 0xFFFF);
+  } else if (!quiet_mode) {
+    printf("0x%.4x: %.4x: ", cpu.PC & 0xFFFF, mem[cpu.PC] & 0xFFFF);
+    cpu.decode(mem[cpu.PC]);
+  }
+}
 
 int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 	     bool gui_mode, bool quiet_mode, const char *exec_file)
@@ -192,13 +203,7 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
   std::string last_cmd;
   std::set<uint16_t> tbreakpoints;
 
-  if (gui_mode) {
-    printf(MARKER "%s:beg:0x%.4x\n", 
-	   mem.debug[cpu.PC].c_str(), cpu.PC & 0xFFFF);
-  } else if (!quiet_mode) {
-    printf("0x%.4x: %.4x: ", cpu.PC & 0xFFFF, mem[cpu.PC] & 0xFFFF);
-    cpu.decode(mem[cpu.PC]);
-  }
+  show_execution_position(cpu, mem, gui_mode, quiet_mode);
 
   signal(SIGINT, sigproc);
   while ((cmd = readline(quiet_mode ? "(gdb) " : "(gdb) "))) try {
@@ -350,17 +355,11 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       uint16_t pc = load_prog(param1.c_str(), mem);
       if (pc != 0xFFFF) {
 	cpu.PC = pc;
-	const char *file = "";
-	if (!mem.debug[cpu.PC].empty()) {
-	  file = mem.debug[cpu.PC].c_str();
-	}
-	if (gui_mode) {
-	  printf(MARKER "%s:beg:0x%.4x\n", 
-		 mem.debug[cpu.PC].c_str(), cpu.PC & 0xFFFF);
-	} else if (!quiet_mode) {
-	  printf("0x%.4x: %.4x: ", cpu.PC & 0xFFFF, mem[cpu.PC] & 0xFFFF);
-	  cpu.decode(mem[cpu.PC]);
-	}
+	//const char *file = "";
+	//if (!mem.debug[cpu.PC].empty()) {
+	//  file = mem.debug[cpu.PC].c_str();
+	//}
+	show_execution_position(cpu, mem, gui_mode, quiet_mode);
 	mem[0xFFFE] = mem[0xFFFE] | 0x8000;
       } else {
 	printf("Could not open %s\n", param1.c_str());
@@ -379,15 +378,38 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       }
     } else if (cmdstr == "break" || cmdstr == "b") {
       uint16_t bp_addr;
+      bool bp_valid = false;
+      size_t colPos;
       incmd >> param1;
 
       if (mem.symbol.count(param1)) {
+	// Symbol
 	bp_addr = mem.symbol[param1];
+	bp_valid = true;
+      } else if ((colPos=param1.find(":")) != std::string::npos) {
+	// FILENAME:LINE
+	std::string fileName = param1.substr(0,colPos);
+	try {
+	  uint16_t lineNo;
+	  lineNo = lexical_cast<uint16_t>(param1.substr(colPos+1));
+	  bp_addr = mem.find_address(fileName, lineNo);
+	  bp_valid = bp_addr != 0;
+	} catch(bad_lexical_cast &e) {
+	  bp_valid = false;
+	} 
       } else {
+	// try verbatim number
 	bp_addr = lexical_cast<uint16_t>(param1);
+	bp_valid = true;
       }
-      printf("Setting breakpoint at 0x%.4x\n", bp_addr);
-      tbreakpoints.insert(bp_addr);
+      
+      if (bp_valid) {
+	printf("Setting breakpoint at 0x%.4x\n", bp_addr);
+	tbreakpoints.insert(bp_addr);
+      } else {
+	printf("breakpoint specification [%s] is not valid\n", param1.c_str());
+      }
+	
 
     } else if (cmdstr == "print" || cmdstr == "p" || cmdstr == "output") {
       incmd >> param1;
@@ -429,28 +451,23 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       printf("Bad command `%s'\nTry using the `help' command.\n", cmd);
     }
 
-    while (instructions_to_run) {
-      instructions_to_run--;
+    if (instructions_to_run) {
+      while (instructions_to_run) {
+	instructions_to_run--;
 
-      if (!(mem[0xFFFE] & 0x8000) || tbreakpoints.count(cpu.PC) || signal_received) {
-	signal_received = 0;
-	tbreakpoints.erase(cpu.PC);
-	instructions_to_run = 0;
-      } else {
-	cpu.cycle();
-	mem.cycle();
-	instruction_count++;
-      }
-
-      if (instructions_to_run == 0) {
-	if (gui_mode) {
-	  printf(MARKER "%s:beg:0x%.4x\n", 
-		 mem.debug[cpu.PC].c_str(), cpu.PC & 0xFFFF);
-	} else if (!quiet_mode) {
-	  printf("0x%.4x: %.4x: ", cpu.PC & 0xFFFF, mem[cpu.PC] & 0xFFFF);
-	  cpu.decode(mem[cpu.PC]);
+	if (!(mem[0xFFFE] & 0x8000) || tbreakpoints.count(cpu.PC) || signal_received) {
+	  signal_received = 0;
+	  tbreakpoints.erase(cpu.PC);
+	  instructions_to_run = 0;
+	} else {
+	  cpu.cycle();
+	  mem.cycle();
+	  instruction_count++;
 	}
+
       }
+
+      show_execution_position(cpu, mem, gui_mode, quiet_mode);
     }
 
     last_cmd = cmd;
@@ -497,3 +514,4 @@ readline (const char* prompt)
 }
 
 #endif
+// vim: sw=2 si:
