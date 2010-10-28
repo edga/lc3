@@ -16,6 +16,8 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * vim: sw=2 si:
 \*/
 
 #include <stdio.h>
@@ -144,18 +146,18 @@ uint16_t load_prog(const char *file, Memory &mem)
   return ret;
 }
 
-static int instructions_to_run = 0;
+static int signal_received = 0;
 void sigproc(int sig)
 {
   signal(SIGINT, sigproc); /* reset for portability */
   fprintf(stderr, "<Interrupted>\n");
-  instructions_to_run = 1;
+  signal_received = 1;
   // TODO: make proper synchronization to avoid race conditions
 }
 
 
 int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
-	     bool gui_mode, bool quiet_mode)
+	     bool gui_mode, bool quiet_mode, const char *exec_file)
 {
   if (!quiet_mode) {
     printf("Type `help' for a list of commands.\n");
@@ -200,7 +202,7 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 
   signal(SIGINT, sigproc);
   while ((cmd = readline(quiet_mode ? "(gdb) " : "(gdb) "))) try {
-    instructions_to_run = 0;
+    int instructions_to_run = 0;
 
     if (!*cmd) cmd = last_cmd.c_str();
 #if defined(USE_READLINE)
@@ -226,6 +228,17 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       }
       else {
 	printf("Loading lib/los.obj\n");
+      }
+
+      // Load executable if specified
+      if (exec_file) {
+      	uint16_t start_addr = load_prog(exec_file, mem);
+	if (0xFFFF == start_addr) {
+	  printf("failed to load %s\n", exec_file);
+	} else {
+	  mem[0x01FE] = start_addr;
+	  tbreakpoints.insert(start_addr);
+	}
       }
 
       if (pc != 0xFFFF) {
@@ -419,7 +432,8 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
     while (instructions_to_run) {
       instructions_to_run--;
 
-      if (!(mem[0xFFFE] & 0x8000) || tbreakpoints.count(cpu.PC)) {
+      if (!(mem[0xFFFE] & 0x8000) || tbreakpoints.count(cpu.PC) || signal_received) {
+	signal_received = 0;
 	tbreakpoints.erase(cpu.PC);
 	instructions_to_run = 0;
       } else {

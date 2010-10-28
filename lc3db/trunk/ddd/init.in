@@ -1,7 +1,29 @@
-! DO NOT ADD ANYTHING BELOW THIS LINE -- DDD WILL OVERWRITE IT
-! Debugger settings.
+Ddd*gdbInitCommands: \
+graph display `x /xb regs` at (300,35)\n
+
 Ddd*debugger: gdb
 Ddd*debuggerCommand: @prefix@/bin/lc3db
+
+! Buttons.
+Ddd*consoleButtons: \
+run//Boot\n \
+step\n \
+next\n
+Ddd*toolButtons: \
+run//Boot\nstep\nnext\n
+
+Ddd*sourceButtons: 
+Ddd*dataButtons: 
+Ddd*verifyButtons: off
+
+
+! DO NOT ADD ANYTHING BELOW THIS LINE -- DDD WILL OVERWRITE IT
+
+Ddd*FlatButtons: off
+Ddd*openDebuggerConsole: on
+Ddd*graph_edit.height: 66
+
+! Debugger settings.
 Ddd*useSourcePath: off
 ! Ddd*gdbSettings: \
 ! set print asm-demangle on\n
@@ -10,9 +32,6 @@ Ddd*useSourcePath: off
 ! Ddd*jdbSettings: 
 ! Ddd*pydbSettings: 
 ! Ddd*perlSettings: 
-Ddd*gdbInitCommands: \
-graph display `x /xb regs` at (220, 30)\n
-
 ! Source.
 Ddd*findWordsOnly: on
 Ddd*findCaseSensitive: on
@@ -98,7 +117,7 @@ Ddd*plotTermType: xlib
 Ddd*toolbarsAtBottom: off
 Ddd*buttonImages: on
 Ddd*buttonCaptions: on
-Ddd*flatToolbarButtons: on
+Ddd*flatToolbarButtons: off
 Ddd*flatDialogButtons: on
 Ddd*buttonColorKey: g
 Ddd*activeButtonColorKey: c

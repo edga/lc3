@@ -1,5 +1,4 @@
 /*\
- * vim: sw=2 si:
  *  LC-3 Simulator
  *  Copyright (C) 2004  Anthony Liguori <aliguori@cs.utexas.edu>
  *
@@ -16,6 +15,8 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * vim: sw=2 si:
 \*/
 
 #include <stdio.h>
@@ -37,7 +38,7 @@ extern "C" {
 
 char* path_ptr;
 int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
-	     bool gui_mode, bool quiet_mode);
+	     bool gui_mode, bool quiet_mode, const char *exec_file);
 uint16_t load_prog(const char *file, Memory &mem);
 
 const char * PROGRAM = "LC-3 Simulator 1.0";
@@ -145,6 +146,7 @@ int main(int argc, char **argv)
       {
 	char buffer[1024];
 	sprintf(buffer, "emacs --eval '(gdb \"%s\")'", *argv);
+	printf("%s\n", buffer);
 	return system(buffer);
       }
     case 'D':
@@ -153,9 +155,9 @@ int main(int argc, char **argv)
 
 	sprintf(buffer, "%s/.lc3db", getenv("HOME"));
 
-	// This is a hack so that one always starts with the top level init file
-	sprintf(sys_string, "/bin/rm -rf ~/.lc3db");
-	system(sys_string);
+	// // This is a hack so that one always starts with the top level init file
+	// sprintf(sys_string, "/bin/rm -rf ~/.lc3db");
+	// system(sys_string);
 
 	if (access(buffer, R_OK | X_OK)) {
 	  if (!access("ddd/init", R_OK)) {
@@ -169,7 +171,11 @@ int main(int argc, char **argv)
 	  }
 	}
 	setenv("DDD_STATE", buffer, 1);
-	sprintf(sys_string, "ddd --debugger %s/bin/lc3db", path_ptr);
+	if (optind < argc) {
+	  sprintf(sys_string, "ddd --debugger %s/bin/lc3db '%s'", path_ptr, argv[optind]);
+	} else {
+	  sprintf(sys_string, "ddd --debugger %s/bin/lc3db", path_ptr);
+	}
 	printf("%s\n", sys_string);
 	return system(sys_string);
       }
@@ -218,5 +224,11 @@ int main(int argc, char **argv)
     }
   }
 
-  return gdb_mode(cpu, mem, hw, gui_mode, quiet_mode);
+  char * exec_file = NULL;
+  // Load user specified code
+  if (optind < argc) {
+    exec_file = argv[optind];
+  }
+
+  return gdb_mode(cpu, mem, hw, gui_mode, quiet_mode, exec_file);
 }

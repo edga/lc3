@@ -37,8 +37,10 @@
 	.FILL PRIV_EXCEPTION	; x0100
 	.FILL ILL_EXCEPTION	; x0101
 
-	.BLKWTO x01FF
-	.FILL STARTUP		; x01FF
+	.BLKWTO x01FE
+USER_START_ADDR
+	.FILL 0				; x01FE: user app start address
+	.FILL STARTUP		; x01FF: kernel start address
 
 	;; -------------------------------------------------------------------
 	;;                           BOOT CODE
@@ -68,13 +70,25 @@ STARTUP
 	;; booted.  It's certainly not necessary.
 	;; 
 BANNER
-	LEA R0,BANNER_STR
+	LEA R0, BANNER_STR
 	LEA R6, BANNER_STACK
 	PUTS
+	;; Checking the user program
+	LDI R0, USER_START_ADDR
+	BRz DONE
+
+	LEA R0, STARTING_STR
+	PUTS
+	LD R0, USER_START_ADDR
+	JSRR R0
+
+DONE:
 	HALT
 
 BANNER_STR
-	 .STRINGZ "LittleOS v0.1\nWritten by Anthony Liguori <aliguori@cs.utexas.edu>\n"
+	.STRINGZ "LittleOS v0.1\nWritten by Anthony Liguori <aliguori@cs.utexas.edu>\n"
+STARTING_STR
+	.STRINGZ "Jumping to user program\n"
 BANNER_STACK_START
 	.BLKW 7
 BANNER_STACK .FILL x0000
