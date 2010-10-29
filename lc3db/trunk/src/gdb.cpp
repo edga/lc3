@@ -158,9 +158,10 @@ void sigproc(int sig)
 void show_execution_position(LC3::CPU &cpu, Memory &mem, bool gui_mode, bool quiet_mode)
 {
   if (gui_mode) {
-    printf(MARKER "%s:beg:0x%.4x\n", 
+    SourceLocation sl = mem.find_source_location_absolute(cpu.PC);
+    printf(MARKER "%s:%d:0:beg:0x%.4x\n", 
 	   //mem.debug[cpu.PC].c_str(), cpu.PC & 0xFFFF);
-	   mem.find_source_path(cpu.PC), cpu.PC & 0xFFFF);
+	   sl.fileName, sl.lineNo, cpu.PC & 0xFFFF);
   } else if (!quiet_mode) {
     printf("0x%.4x: %.4x: ", cpu.PC & 0xFFFF, mem[cpu.PC] & 0xFFFF);
     cpu.decode(mem[cpu.PC]);
@@ -193,6 +194,9 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
   char sys_string[2048];
 
   int instruction_count = 0;
+
+  char last_bp[1024];
+  last_bp[0] = 0;
 
 #if defined(USE_READLINE)
   using_history();
@@ -399,12 +403,33 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 	} 
       } else {
 	// try verbatim number
-	bp_addr = lexical_cast<uint16_t>(param1);
+	if (param1[0] == '*') {
+	  bp_addr = lexical_cast<uint16_t>(param1.substr(1));
+	} else {
+	  bp_addr = lexical_cast<uint16_t>(param1);
+	}
 	bp_valid = true;
       }
       
       if (bp_valid) {
-	printf("Setting breakpoint at 0x%.4x\n", bp_addr);
+	SourceLocation sl = mem.find_source_location_short(bp_addr);
+	if (sl.lineNo > 0) {
+	  printf("Breakpoint %d at 0x%.4x: file %s, line %d.\n",
+	      1, bp_addr, sl.fileName, sl.lineNo);
+	  sprintf(last_bp, 
+	      "%-8s%-15s%-5s%-4s%-11s%s\n"
+	      "%-8d%-15s%-5s%-4s0x%-9.4xat %s:%d\n",
+	      "Num", "Type", "Disp", "Enb", "Address", "What",
+	      1, "breakpoint", "keep", "y", bp_addr, sl.fileName, sl.lineNo);
+	} else {
+	  printf("Breakpoint %d at 0x%.4x\n", 
+	      1, bp_addr);
+	  sprintf(last_bp, 
+	      "%-8s%-15s%-5s%-4s%-11s%s\n"
+	      "%-8d%-15s%-5s%-4s0x%-9.4x<no_source>\n",
+	      "Num", "Type", "Disp", "Enb", "Address", "What",
+	      1, "breakpoint", "keep", "y", bp_addr, sl.fileName, sl.lineNo);
+	}
 	tbreakpoints.insert(bp_addr);
       } else {
 	printf("breakpoint specification [%s] is not valid\n", param1.c_str());
@@ -435,7 +460,7 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 	       (int16_t)mem[off & 0xFFFF] & 0xFFFF);
       }
     } else if (cmdstr == "step" || cmdstr == "s") {
-      param1.clear();
+      //param1.clear();
       incmd >> param1;
       if (!param1.empty()) try {
 	instructions_to_run = lexical_cast<uint16_t>(param1);
@@ -447,6 +472,13 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
     } else if (cmdstr == "exit" || cmdstr == "quit" || cmdstr == "q") {
       break;
     } else if (cmdstr == "info") {
+      incmd >> param1;
+      if (param1 == "breakpoints") {
+	// -> "info breakpoints\n"
+	//    "Num     Type           Disp Enb Address    What\n"
+	//    "1       breakpoint     keep y   0x08048577 in main at swap_endian.c:18\n"
+	printf("%s", (last_bp[0])? last_bp : "No breakpoints or watchpoints.\n");	
+      }
     } else {
       printf("Bad command `%s'\nTry using the `help' command.\n", cmd);
     }
@@ -456,6 +488,10 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 	instructions_to_run--;
 
 	if (!(mem[0xFFFE] & 0x8000) || tbreakpoints.count(cpu.PC) || signal_received) {
+	  if (tbreakpoints.count(cpu.PC)) {
+	    //printf("Breakpoint %d, 0x%.4x\n", 1, cpu.PC);
+	    //printf("Breakpoint %d, 0x%.4x at %s:%d\n", 1, cpu.PC, file, lineNo);
+	  }
 	  signal_received = 0;
 	  tbreakpoints.erase(cpu.PC);
 	  instructions_to_run = 0;

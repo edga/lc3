@@ -40,15 +40,25 @@ private:
   MappedWord *mapped;
 };
 
-struct SourceLocation
+// Internal source location
+struct SourceLocationInt
 {
   int fileId;
   int lineNo;
 
-  SourceLocation() :
+  SourceLocationInt() :
     fileId(0),lineNo(-1) {}
-  SourceLocation(const int _fileId,const int _lineNo) :
+  SourceLocationInt(const int _fileId,const int _lineNo) :
     fileId(_fileId),lineNo(_lineNo) {}
+};	
+
+struct SourceLocation
+{
+  const char * fileName;
+  int lineNo;
+
+  SourceLocation(const char *_fileName, const int _lineNo) :
+    fileName(_fileName),lineNo(_lineNo) {}
 };	
 
 class Memory {
@@ -63,14 +73,17 @@ public:
   int add_source_file(std::string filePath); 
   void add_source_line(uint16_t address, int fileId, int lineNo); 
   const char * find_source_path(uint16_t address); 
+  SourceLocation find_source_location_short(uint16_t address); 
+  SourceLocation find_source_location_absolute(uint16_t address); 
   uint16_t find_address(std::string fileName, int lineNo); 
-  std::map<uint16_t, SourceLocation> sources; // lc3 address => source file location
+  std::map<uint16_t, SourceLocationInt> sources; // lc3 address => source file location
   std::vector<std::string> fileNames;	// fileID => short file name
   std::vector<std::string> filePaths;	// fileID => full path
   std::vector<std::vector<uint16_t> > addresses; // source file location => lc3 address (addresses[fileId][lineNo])
   std::map<std::string, uint16_t> symbol;
 
 private:
+  SourceLocationInt find_source_location(uint16_t address); 
   MappedWord *mapped_word(uint16_t index);
   typedef std::map<uint16_t, MappedWord *> dma_map_t;
   dma_map_t dma;

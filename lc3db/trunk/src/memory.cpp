@@ -142,7 +142,7 @@ void Memory::add_source_line(uint16_t address, int fileId, int lineNo)
 {
   assert(fileId < filePaths.size());
   // Add element for source lookup
-  sources[address] = SourceLocation(fileId, lineNo);
+  sources[address] = SourceLocationInt(fileId, lineNo);
   std::vector<uint16_t> &pfa = addresses[fileId];
 
   // Add element for address lookup
@@ -170,23 +170,29 @@ uint16_t Memory::find_address(std::string fileName, int lineNo)
   return 0;
 }
 
-const char* Memory::find_source_path(uint16_t address) 
+SourceLocationInt Memory::find_source_location(uint16_t address) 
 {
-  const int buf_size = 512;
-  static char buf[buf_size];
-  std::map<uint16_t, SourceLocation>::const_iterator it;
+  std::map<uint16_t, SourceLocationInt>::const_iterator it;
 
   it = sources.find(address);
-  if (it == sources.end()) {
-    buf[0] = 0;
-  } else {
-    const char * fileName = filePaths[it->second.fileId].c_str();
-    int lineNo = it->second.lineNo;
-    snprintf(buf, buf_size,  "%s:%d:0", fileName, lineNo);
-    buf[buf_size-1] = 0;
+  if (it != sources.end()) {
+    return it->second;
   }
 
-  return buf;
+  return SourceLocationInt();
 }
+
+SourceLocation Memory::find_source_location_short(uint16_t address) 
+{
+  SourceLocationInt sl = find_source_location(address);
+  return SourceLocation(fileNames[sl.fileId].c_str(), sl.lineNo);
+}
+
+SourceLocation Memory::find_source_location_absolute(uint16_t address) 
+{
+  SourceLocationInt sl = find_source_location(address);
+  return SourceLocation(filePaths[sl.fileId].c_str(), sl.lineNo);
+}
+
 
 // vim: sw=2 si:
