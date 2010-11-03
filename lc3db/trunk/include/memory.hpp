@@ -1,6 +1,7 @@
 /*\
  *  LC-3 Simulator
  *  Copyright (C) 2004  Anthony Liguori <aliguori@cs.utexas.edu>
+ *  Modifications 2010  Edgar Lakis <edgar.lakis@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -40,27 +41,6 @@ private:
   MappedWord *mapped;
 };
 
-// Internal source location
-struct SourceLocationInt
-{
-  int fileId;
-  int lineNo;
-
-  SourceLocationInt() :
-    fileId(0),lineNo(-1) {}
-  SourceLocationInt(const int _fileId,const int _lineNo) :
-    fileId(_fileId),lineNo(_lineNo) {}
-};	
-
-struct SourceLocation
-{
-  const char * fileName;
-  int lineNo;
-
-  SourceLocation(const char *_fileName, const int _lineNo) :
-    fileName(_fileName),lineNo(_lineNo) {}
-};	
-
 class Memory {
 public:
   Memory();
@@ -70,20 +50,8 @@ public:
   uint16_t load(const std::string &filename);
   void cycle();
   void register_dma(uint16_t address, MappedWord *word);
-  int add_source_file(std::string filePath); 
-  void add_source_line(uint16_t address, int fileId, int lineNo); 
-  const char * find_source_path(uint16_t address); 
-  SourceLocation find_source_location_short(uint16_t address); 
-  SourceLocation find_source_location_absolute(uint16_t address); 
-  uint16_t find_address(std::string fileName, int lineNo); 
-  std::map<uint16_t, SourceLocationInt> sources; // lc3 address => source file location
-  std::vector<std::string> fileNames;	// fileID => short file name
-  std::vector<std::string> filePaths;	// fileID => full path
-  std::vector<std::vector<uint16_t> > addresses; // source file location => lc3 address (addresses[fileId][lineNo])
-  std::map<std::string, uint16_t> symbol;
 
 private:
-  SourceLocationInt find_source_location(uint16_t address); 
   MappedWord *mapped_word(uint16_t index);
   typedef std::map<uint16_t, MappedWord *> dma_map_t;
   dma_map_t dma;

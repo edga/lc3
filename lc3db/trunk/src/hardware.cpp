@@ -201,7 +201,10 @@ public:
     tcgetattr(fd, &new_termios);
     termios_original = new_termios;
     new_termios.c_lflag &= ~(ICANON | ECHO);
-    tcsetattr(fd, TCSAFLUSH, &new_termios);
+    // FixMe:
+    if (fd != fileno(stdin)) {
+      tcsetattr(fd, TCSAFLUSH, &new_termios);
+    }
     ifd = fd;
   }
 

@@ -2,6 +2,7 @@
  *  LC-3 Simulator
  *  Copyright (C) 2004  Anthony Liguori <aliguori@cs.utexas.edu>
  *  Copyright (C) 2004  Ehren Kret <kret@cs.utexas.edu>
+ *  Modifications 2010  Edgar Lakis <edgar.lakis@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -39,6 +40,8 @@ static char* readline (const char* prompt);
 #include "memory.hpp"
 #include "hardware.hpp"
 #include "lexical_cast.hpp"
+#include "source_info.hpp"
+#include "breakpoints.hpp"
 
   extern char* path_ptr;
 
@@ -70,6 +73,9 @@ const char * HELP =
 
 " dump (d) <start> <end>\n"
 "   Dump the memory from address start to end.\n\n"
+
+" finish\n"
+"   Continue untill return\n\n"
 
 " force (f) <symbol> <value>\n"
 "   Sets the data represented by symbol to value\n\n"
@@ -106,7 +112,7 @@ extern "C" {
   int lc3_asm(int, const char **);
 }
 
-uint16_t load_prog(const char *file, Memory &mem)
+uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem)
 {
   std::string object = file;
   std::string base = object.substr(0, object.rfind(".obj"));
@@ -121,7 +127,7 @@ uint16_t load_prog(const char *file, Memory &mem)
 
   fgets(source, sizeof(source), f);
   source[strlen(source) - 1] = 0;
-  int fileId = mem.add_source_file(std::string(source));
+  int fileId = src_info.add_source_file(std::string(source));
 
   while (!feof(f)) {
     if (fgetc(f) != '!') {
@@ -133,12 +139,12 @@ uint16_t load_prog(const char *file, Memory &mem)
 	// str += buf;
 	// str += ":0";
 	// mem.debug[addr & 0xFFFF] = str;
-	mem.add_source_line(addr & 0xFFFF, fileId, linenum);
+	src_info.add_source_line(addr & 0xFFFF, fileId, linenum);
       }
     } else {
       char label[4096];
       if (2 == fscanf(f, "%x:%s\n", &addr, label)) {
-	mem.symbol[label] = addr;
+	src_info.symbol[label] = addr;
       }
     }
   }
@@ -155,10 +161,10 @@ void sigproc(int sig)
   // TODO: make proper synchronization to avoid race conditions
 }
 
-void show_execution_position(LC3::CPU &cpu, Memory &mem, bool gui_mode, bool quiet_mode)
+void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, bool gui_mode, bool quiet_mode)
 {
   if (gui_mode) {
-    SourceLocation sl = mem.find_source_location_absolute(cpu.PC);
+    SourceLocation sl = src_info.find_source_location_absolute(cpu.PC);
     printf(MARKER "%s:%d:0:beg:0x%.4x\n", 
 	   //mem.debug[cpu.PC].c_str(), cpu.PC & 0xFFFF);
 	   sl.fileName, sl.lineNo, cpu.PC & 0xFFFF);
@@ -168,7 +174,7 @@ void show_execution_position(LC3::CPU &cpu, Memory &mem, bool gui_mode, bool qui
   }
 }
 
-int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
+int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	     bool gui_mode, bool quiet_mode, const char *exec_file)
 {
   if (!quiet_mode) {
@@ -195,9 +201,6 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 
   int instruction_count = 0;
 
-  char last_bp[1024];
-  last_bp[0] = 0;
-
 #if defined(USE_READLINE)
   using_history();
 #endif
@@ -205,13 +208,17 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 
   const char *cmd = 0;
   std::string last_cmd;
-  std::set<uint16_t> tbreakpoints;
 
-  show_execution_position(cpu, mem, gui_mode, quiet_mode);
+  UserBreakpoits breakpoints(src_info);
+  bool break_on_return;
+  std::set<uint16_t> internal_breakpoints;
+
+  show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
 
   signal(SIGINT, sigproc);
   while ((cmd = readline(quiet_mode ? "(gdb) " : "(gdb) "))) try {
     int instructions_to_run = 0;
+    break_on_return = 0;
 
     if (!*cmd) cmd = last_cmd.c_str();
 #if defined(USE_READLINE)
@@ -229,11 +236,11 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 	hw.set_tty(open(param2.c_str(), O_RDWR));
       }
 
-      uint16_t pc = load_prog("lib/los.obj", mem);
+      uint16_t pc = load_prog("lib/los.obj", src_info, mem);
       if (pc == 0xFFFF) {
 	sprintf(sys_string, "%s/lib/lc3db/los.obj", path_ptr);
 	printf("Loading %s\n", sys_string);
-	pc = load_prog(sys_string, mem);
+	pc = load_prog(sys_string, src_info, mem);
       }
       else {
 	printf("Loading lib/los.obj\n");
@@ -241,12 +248,12 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 
       // Load executable if specified
       if (exec_file) {
-      	uint16_t start_addr = load_prog(exec_file, mem);
+      	uint16_t start_addr = load_prog(exec_file, src_info, mem);
 	if (0xFFFF == start_addr) {
 	  printf("failed to load %s\n", exec_file);
 	} else {
 	  mem[0x01FE] = start_addr;
-	  tbreakpoints.insert(start_addr);
+	  internal_breakpoints.insert(start_addr);
 	}
       }
 
@@ -258,6 +265,9 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       } else {
 	printf("Could not find los.obj\n");
       }
+    } else if (cmdstr == "finish") {
+      break_on_return = 1;
+      instructions_to_run = 0x7FFFFFFF;
     } else if (cmdstr == "force" || cmdstr == "f") {
       incmd >> param1 >> param2;
       off = lexical_cast<uint16_t>(param2);
@@ -265,8 +275,8 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 	
       if(mytable.count(param1.c_str()))
 	*mytable[param1.c_str()] = off;
-      else if(mem.symbol.count(param1)) {
-	uint16_t addr = mem.symbol[param1];
+      else if(src_info.symbol.count(param1)) {
+	uint16_t addr = src_info.symbol[param1];
 	mem[addr] = off;
       } else {
 	uint16_t off2 = lexical_cast<uint16_t>(param1);
@@ -342,8 +352,8 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       uint16_t end  = lexical_cast<uint16_t>(param2);
       for (; start < end; start++) {
 	uint16_t IR = mem[start];
-	for (std::map<std::string, uint16_t>::iterator i = mem.symbol.begin();
-	     i != mem.symbol.end(); ++i) {
+	for (std::map<std::string, uint16_t>::iterator i = src_info.symbol.begin();
+	     i != src_info.symbol.end(); ++i) {
 	  if (i->second == start) {
 	    printf("%s:\n", i->first.c_str());
 	    break;
@@ -356,14 +366,14 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       printf("%s", HELP);
     } else if (cmdstr == "load" || cmdstr == "l" || cmdstr == "file") {
       incmd >> param1;
-      uint16_t pc = load_prog(param1.c_str(), mem);
+      uint16_t pc = load_prog(param1.c_str(), src_info, mem);
       if (pc != 0xFFFF) {
 	cpu.PC = pc;
 	//const char *file = "";
 	//if (!mem.debug[cpu.PC].empty()) {
 	//  file = mem.debug[cpu.PC].c_str();
 	//}
-	show_execution_position(cpu, mem, gui_mode, quiet_mode);
+	show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
 	mem[0xFFFE] = mem[0xFFFE] | 0x8000;
       } else {
 	printf("Could not open %s\n", param1.c_str());
@@ -374,11 +384,21 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       switch (IR & 0xF000) {
       case 0xF000: // TRAP
       case 0x4000: // JSR
-	tbreakpoints.insert(cpu.PC + 1);
+	internal_breakpoints.insert(cpu.PC + 1);
 	instructions_to_run = 0x7FFFFFFF;
 	break;
       default:
 	instructions_to_run = 1;
+      }
+    } else if (cmdstr == "ignore") {
+      incmd >> param1 >> param2;
+      int id = lexical_cast<uint16_t>(param1);
+      int count = lexical_cast<uint16_t>(param2);
+      int res = breakpoints.setIgnoreCount(id, count);
+      if (res > 0) {
+	printf("Will ignore next %d crossings of breakpoint %d.\n", count, res);
+      } else {
+	printf("No breakpoint number %d.\n", id);
       }
     } else if (cmdstr == "break" || cmdstr == "b") {
       uint16_t bp_addr;
@@ -386,9 +406,9 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       size_t colPos;
       incmd >> param1;
 
-      if (mem.symbol.count(param1)) {
+      if (src_info.symbol.count(param1)) {
 	// Symbol
-	bp_addr = mem.symbol[param1];
+	bp_addr = src_info.symbol[param1];
 	bp_valid = true;
       } else if ((colPos=param1.find(":")) != std::string::npos) {
 	// FILENAME:LINE
@@ -396,7 +416,7 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 	try {
 	  uint16_t lineNo;
 	  lineNo = lexical_cast<uint16_t>(param1.substr(colPos+1));
-	  bp_addr = mem.find_address(fileName, lineNo);
+	  bp_addr = src_info.find_address(fileName, lineNo);
 	  bp_valid = bp_addr != 0;
 	} catch(bad_lexical_cast &e) {
 	  bp_valid = false;
@@ -412,25 +432,7 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       }
       
       if (bp_valid) {
-	SourceLocation sl = mem.find_source_location_short(bp_addr);
-	if (sl.lineNo > 0) {
-	  printf("Breakpoint %d at 0x%.4x: file %s, line %d.\n",
-	      1, bp_addr, sl.fileName, sl.lineNo);
-	  sprintf(last_bp, 
-	      "%-8s%-15s%-5s%-4s%-11s%s\n"
-	      "%-8d%-15s%-5s%-4s0x%-9.4xat %s:%d\n",
-	      "Num", "Type", "Disp", "Enb", "Address", "What",
-	      1, "breakpoint", "keep", "y", bp_addr, sl.fileName, sl.lineNo);
-	} else {
-	  printf("Breakpoint %d at 0x%.4x\n", 
-	      1, bp_addr);
-	  sprintf(last_bp, 
-	      "%-8s%-15s%-5s%-4s%-11s%s\n"
-	      "%-8d%-15s%-5s%-4s0x%-9.4x<no_source>\n",
-	      "Num", "Type", "Disp", "Enb", "Address", "What",
-	      1, "breakpoint", "keep", "y", bp_addr, sl.fileName, sl.lineNo);
-	}
-	tbreakpoints.insert(bp_addr);
+	breakpoints.add(bp_addr);
       } else {
 	printf("breakpoint specification [%s] is not valid\n", param1.c_str());
       }
@@ -443,8 +445,8 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
 	printf("%s = %.4x (%d)\n", param1.c_str(),
 	       *mytable[param1.c_str()] & 0xFFFF,
 	       *mytable[param1.c_str()] & 0xFFFF);
-      } else if (mem.symbol.count(param1)) {
-	uint16_t addr = mem.symbol[param1];
+      } else if (src_info.symbol.count(param1)) {
+	uint16_t addr = src_info.symbol[param1];
 	printf("0x%.4x: %.4x (%d)\n", addr & 0xFFFF,
 	       mem[addr] & 0xFFFF, mem[addr] & 0xFFFF);
       } else if (param1 == "all") {
@@ -471,13 +473,66 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       }
     } else if (cmdstr == "exit" || cmdstr == "quit" || cmdstr == "q") {
       break;
-    } else if (cmdstr == "info") {
+    } else if (cmdstr == "ignore") {
+      param1.clear();
+      param2.clear();
+      incmd >> param1 >> param2;
+      int id = lexical_cast<uint16_t>(param1);
+      int count = lexical_cast<uint16_t>(param1);
+      breakpoints.setIgnoreCount(id, count);
+    } else if (cmdstr == "delete" || cmdstr == "disable") {
+      bool del = (cmdstr=="delete");
+      param1.clear();
       incmd >> param1;
       if (param1 == "breakpoints") {
-	// -> "info breakpoints\n"
-	//    "Num     Type           Disp Enb Address    What\n"
-	//    "1       breakpoint     keep y   0x08048577 in main at swap_endian.c:18\n"
-	printf("%s", (last_bp[0])? last_bp : "No breakpoints or watchpoints.\n");	
+	param1.clear();
+	incmd >> param1;
+      }
+      if (param1.empty()) {
+	printf("Breakpoint id expected.\nTry using the `help' command.\n");
+      } else {
+	do{
+	  int id = lexical_cast<uint16_t>(param1);
+	  if (del) {
+	    breakpoints.erase(id);
+	  } else {
+	    breakpoints.setEnabled(id, false, false, Keep);
+	  }
+	  param1.clear();
+	  incmd >> param1;
+	} while (!param1.empty());
+      }
+    } else if (cmdstr == "enable") {
+      BreakpointDisposition disp = Keep;
+      param1.clear();
+      incmd >> param1;
+      if (param1 == "breakpoints") {
+	param1.clear();
+	incmd >> param1;
+      }
+      if (param1 == "once") {
+	disp = Disable;
+	param1.clear();
+	incmd >> param1;
+      } else if (param1 == "delete") {
+	disp = Delete;
+	param1.clear();
+	incmd >> param1;
+      }
+      if (param1.empty()) {
+	printf("Breakpoint id expected.\nTry using the `help' command.\n");
+      } else {
+	do{
+	  int id = lexical_cast<uint16_t>(param1);
+	  breakpoints.setEnabled(id, true, disp != Keep, disp);
+	  param1.clear();
+	  incmd >> param1;
+	} while (!param1.empty());
+      }
+    } else if (cmdstr == "info") {
+      incmd >> param1;
+      if (param1 == "breakpoints" || param1 == "b") {
+	breakpoints.showInfo();
       }
     } else {
       printf("Bad command `%s'\nTry using the `help' command.\n", cmd);
@@ -487,23 +542,37 @@ int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
       while (instructions_to_run) {
 	instructions_to_run--;
 
-	if (!(mem[0xFFFE] & 0x8000) || tbreakpoints.count(cpu.PC) || signal_received) {
-	  if (tbreakpoints.count(cpu.PC)) {
-	    //printf("Breakpoint %d, 0x%.4x\n", 1, cpu.PC);
-	    //printf("Breakpoint %d, 0x%.4x at %s:%d\n", 1, cpu.PC, file, lineNo);
+	// Check stoping conditions
+	if (!(mem[0xFFFE] & 0x8000)) {
+	  fprintf(stderr, "LC3 is halted\n");
+	  break;
+	}
+	// FixMe:
+	if (break_on_return &&
+	    (mem[cpu.PC] == 0xA1A0 || // RET
+	     mem[cpu.PC] == 0x8000)   // RTI
+	    )  {
+	  break;
+	}
+	if (internal_breakpoints.count(cpu.PC) || signal_received) {
+	  if (internal_breakpoints.count(cpu.PC)) {
+	    printf("internal breakpoint at 0x%.4x\n", cpu.PC);
 	  }
 	  signal_received = 0;
-	  tbreakpoints.erase(cpu.PC);
-	  instructions_to_run = 0;
-	} else {
-	  cpu.cycle();
-	  mem.cycle();
-	  instruction_count++;
+	  internal_breakpoints.erase(cpu.PC);
+	  break;
+	}
+	if (breakpoints.check(cpu.PC)) {
+	  break;
 	}
 
+	// Execute
+	cpu.cycle();
+	mem.cycle();
+	instruction_count++;
       }
 
-      show_execution_position(cpu, mem, gui_mode, quiet_mode);
+      show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
     }
 
     last_cmd = cmd;

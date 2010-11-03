@@ -30,7 +30,7 @@ LIBS=@LIBS@ @LIBREADLINE@
 CXXFLAGS=-Iinclude @CXXFLAGS@ -DPREFIX=\"$(PREFIX)/\" @DEFS@
 CFLAGS=@CFLAGS@ 
 
-OBJ=src/hardware.o src/memory.o src/main.o arch/lc3.o src/lc3.o src/gdb.o
+OBJ=src/hardware.o src/source_info.o src/breakpoints.o src/memory.o src/main.o arch/lc3.o src/lc3.o src/gdb.o
 
 all: bin/lc3db lib/los.obj
 
@@ -72,7 +72,7 @@ clean:
 	$(RM) $(OBJ)  bin/lc3db src/lc3.o src/lex.lc3.c lib/los.obj \
                       lib/los.dbg lc3db.1 los/*.obj los/*.dbg
 
-really:
+really: depsclean
 	$(RM) *~ src/*~ arch/*~
 
 tidy:
@@ -84,3 +84,14 @@ tidy:
 src/lc3.o: src/lc3.f
 	flex -i -osrc/lex.lc3.c -Plc3 src/lc3.f
 	$(CC) -c -o src/lc3.o $(CFLAGS) src/lex.lc3.c
+
+# Automatic header dependencies
+%.d: %.cpp
+	$(CC) -MM $(CXXFLAGS) -MT "$@ $(@:.d=.o)" $< > $@
+
+-include $(OBJ:.o=.d)
+
+depsclean:
+	$(RM) $(OBJ:.o=.d)
+
+

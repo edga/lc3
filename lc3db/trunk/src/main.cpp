@@ -1,6 +1,7 @@
 /*\
  *  LC-3 Simulator
  *  Copyright (C) 2004  Anthony Liguori <aliguori@cs.utexas.edu>
+ *  Modifications 2010  Edgar Lakis <edgar.lakis@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -31,15 +32,16 @@
 #include "cpu.hpp"
 #include "memory.hpp"
 #include "hardware.hpp"
+#include "source_info.hpp"
 
 extern "C" {
   int lc3_asm(int, const char **);
 }
 
 char* path_ptr;
-int gdb_mode(LC3::CPU &cpu, Memory &mem, Hardware &hw,
+int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	     bool gui_mode, bool quiet_mode, const char *exec_file);
-uint16_t load_prog(const char *file, Memory &mem);
+uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem);
 
 const char * PROGRAM = "LC-3 Simulator 1.0";
 const char * COPYRIGHT =
@@ -54,6 +56,7 @@ const char * INFO =
 int main(int argc, char **argv) 
 {
   Memory mem;
+  SourceInfo src_info;
   struct option longopts[] = {
     {"fullname", 0, 0, 'f'},
     {"cd"      , 1, 0, 'C'},
@@ -184,10 +187,10 @@ int main(int argc, char **argv)
     }
   }
 
-  if (0xFFFF == load_prog("lib/los.obj", mem)) {
+  if (0xFFFF == load_prog("lib/los.obj", src_info, mem)) {
     sprintf(sys_string, "%s/lib/lc3db/los.obj", path_ptr);
     printf("Loading %s\n", sys_string);
-    load_prog(sys_string, mem);
+    load_prog(sys_string, src_info, mem);
   }
   else {
     printf("Loading lib/los.obj\n");
@@ -230,5 +233,5 @@ int main(int argc, char **argv)
     exec_file = argv[optind];
   }
 
-  return gdb_mode(cpu, mem, hw, gui_mode, quiet_mode, exec_file);
+  return gdb_mode(cpu, src_info, mem, hw, gui_mode, quiet_mode, exec_file);
 }
