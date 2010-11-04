@@ -70,6 +70,9 @@
 #define BAD_ADDRESS       \
 	"Addresses must be labels or values in the range x0000 to xFFFF."
 
+#ifdef LC3IOEMU_DIR
+#include "LC3IOEMU_DIR/lc3io.h"
+#endif
 /*
    Types of breakpoints.  Currently only user breakpoints are
    handled in this manner; the system breakpoint used for the
@@ -436,6 +439,10 @@ command_loop ()
 
 		/* Execute the command. */
 		(*a_command->cmd_func) (start);
+#if defined(USE_READLINE)
+		if (cmd && *cmd)
+			add_history (cmd);
+#endif
 
 		/* Handle list type and repeatable commands. */
 		if (a_command->flags & CMD_FLAG_LIST_TYPE) {
@@ -556,6 +563,16 @@ read_memory (int addr)
 	case 0xFE06: /* DDR */
 	    return 0x0000;
     	case 0xFFFE: return 0x8000;   /* MCR */
+#ifdef LC3IOEMU_DIR
+	case SW_S:
+	case BTN_S:
+	case SSEG_S:
+	case LED_S:
+		return 0x8000; /* allways ready */
+	case SW_D:
+	case BTN_D:
+		return io_read(addr); /* read from gui */
+#endif
     }
     return lc3_memory[addr];
 }
@@ -579,6 +596,11 @@ write_memory (int addr, int value)
 	    if ((value & 0x8000) == 0)
 	    	should_halt = 1;
 	    return;
+#ifdef LC3IOEMU_DIR
+	case SSEG_D:
+	case LED_D:
+		return io_write(addr, value); /* write to gui */
+#endif
     }
     /* No need to write/update GUI if the same value is already in memory. */
     if (value != lc3_memory[addr]) {

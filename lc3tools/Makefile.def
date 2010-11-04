@@ -54,6 +54,7 @@ BUTTON_FONT = __BUTTON_FONT__
 CONSOLE_FONT = __CONSOLE_FONT__
 EXTRAFLAGS = __EXTRA_FLAGS__
 NO_CYGWIN = __NO_CYGWIN__
+LC3IOEMU_DIR = __LC3IOEMU_DIR__
 # End of configuration block.
 
 CFLAGS  = -g -Wall ${EXTRAFLAGS}
@@ -132,9 +133,19 @@ dist_lc3convert_clear: dist_lc3convert_clean
 
 dist_lc3sim: lc3sim${EXE} lc3os.obj lc3os.sym
 
+ifeq ($(LC3IOEMU_DIR),)
 lc3sim${EXE}: lc3sim.o sim_symbol.o
 	${GCC} ${LDFLAGS} ${RLIPATH} -o lc3sim${EXE} \
 		lc3sim.o sim_symbol.o ${RLLPATH} ${OS_SIM_LIBS}
+else
+lc3sim${EXE}: lc3sim.o sim_symbol.o $(LC3IOEMU_DIR)/lc3io.o
+	${GCC} ${LDFLAGS} ${RLIPATH} -o lc3sim${EXE} \
+		lc3sim.o sim_symbol.o $(LC3IOEMU_DIR)/lc3io.o ${RLLPATH} ${OS_SIM_LIBS}
+
+$(LC3IOEMU_DIR)/lc3io.o: $(LC3IOEMU_DIR)/lc3io.c $(LC3IOEMU_DIR)/lc3io.h
+	${GCC} -c ${CFLAGS} -DINSTALL_DIR="\"${INSTALL_DIR}\"" -o $@ $<
+endif
+
 
 lc3os.obj: ${LC3AS} lc3os.asm
 	${LC3AS} lc3os
