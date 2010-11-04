@@ -135,6 +135,7 @@ int UserBreakpoits::add(uint16_t address)
 
   Breakpoint* b = new Breakpoint(++last_id, address, sl.fileName, sl.lineNo);
   breakpoints.push_back(b);
+  active_breakpoints.insert(address);
 
   return last_id;
 }

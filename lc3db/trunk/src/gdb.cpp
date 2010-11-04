@@ -211,14 +211,15 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
   UserBreakpoits breakpoints(src_info);
   bool break_on_return;
-  std::set<uint16_t> internal_breakpoints;
+  bool breakpoint_hit = false;	// Flag set once breakpoint is detected, so that breakpointed instruction can be enabled.
+  int temporary_breakpoint = -1;
 
   show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
 
   signal(SIGINT, sigproc);
   while ((cmd = readline(quiet_mode ? "(gdb) " : "(gdb) "))) try {
     int instructions_to_run = 0;
-    break_on_return = 0;
+    break_on_return = false;
 
     if (!*cmd) cmd = last_cmd.c_str();
 #if defined(USE_READLINE)
@@ -253,7 +254,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	  printf("failed to load %s\n", exec_file);
 	} else {
 	  mem[0x01FE] = start_addr;
-	  internal_breakpoints.insert(start_addr);
+	  temporary_breakpoint = start_addr;
 	}
       }
 
@@ -384,7 +385,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       switch (IR & 0xF000) {
       case 0xF000: // TRAP
       case 0x4000: // JSR
-	internal_breakpoints.insert(cpu.PC + 1);
+	temporary_breakpoint = cpu.PC + 1;
 	instructions_to_run = 0x7FFFFFFF;
 	break;
       default:
@@ -554,15 +555,13 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	    )  {
 	  break;
 	}
-	if (internal_breakpoints.count(cpu.PC) || signal_received) {
-	  if (internal_breakpoints.count(cpu.PC)) {
-	    printf("internal breakpoint at 0x%.4x\n", cpu.PC);
-	  }
+	if (temporary_breakpoint == cpu.PC || signal_received) {
 	  signal_received = 0;
-	  internal_breakpoints.erase(cpu.PC);
+	  temporary_breakpoint = -1;
 	  break;
 	}
-	if (breakpoints.check(cpu.PC)) {
+	if (!breakpoint_hit && breakpoints.check(cpu.PC)) {
+	  breakpoint_hit = true;
 	  break;
 	}
 
@@ -570,6 +569,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	cpu.cycle();
 	mem.cycle();
 	instruction_count++;
+	breakpoint_hit = false;
       }
 
       show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
