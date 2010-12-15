@@ -402,7 +402,7 @@ int check_ldr(const char *line, int reg_num, int *poffset)
 int
 main (int argc, char *argv[])
 {
-   FILE *output_file, *code_file, *var_file, *full_file;
+   FILE *output_file, *header_file, *code_file, *var_file, *full_file;
    int i=0;
    int var_name_maxlen = LINE_MAXLEN;
    int cwd_size=200;
@@ -461,8 +461,14 @@ main (int argc, char *argv[])
       cwd = realloc(cwd, cwd_size);
    }
 
-   /*argv[1] == libpath*/
    chdir(argv[1]);
+   /*argv[1] == libpath*/
+   header_file = fopen("__init.asm", "r");
+   if(header_file == NULL) {
+      printf("Error opening file %s__init.asm\n", argv[1]);
+      exit(1);
+   }
+
    files[argc-2] = fopen("stdio.asm", "r");
    if(files[argc-2] == NULL)
       printf("Error opening file %sstdio.asm\n", argv[1]);
@@ -602,6 +608,15 @@ main (int argc, char *argv[])
       if( (output_file = fopen(tmp_line, "w")) == NULL)
       printf("error opening file \n");
       */
+
+   /* Insert header from file
+    */
+   while (!feof(header_file)) {
+      Readline(header_file, &curr_line, &curr_line_maxlen);
+      fprintf(output_file, "%s\n", curr_line);
+   }
+   fclose(header_file);
+   header_file = NULL;
 
    /* Replace each .LC3GLOBAL varname regnum line with the LC-3
     * assembly to load the value of the variable into the register
@@ -781,14 +796,18 @@ void
 Readline(FILE* file, char** buf, int* len)
 {
    int i=0;
+   int c;
    for(i=0; !feof(file); i++) {
       if( i > *len - 2) {
          *buf = (char*) realloc((void*) *buf, (*len) * 2);
          *len = (*len) * 2;
       }
 
-      if( ((*buf)[i] = fgetc(file)) == '\n')
+      c = fgetc(file);
+      if(c == '\n' ||
+         c == EOF)
          break;
+      (*buf)[i] = c;
    }
    (*buf)[i] = '\0';
 }

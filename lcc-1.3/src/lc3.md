@@ -595,6 +595,8 @@ static void progbeg(int argc, char *argv[]) {
 	tmask[IREG] = INTTMP | INTRET; tmask[FREG] = FLTTMP;
 	vmask[IREG] = INTVAR; vmask[FREG] = FLTVAR;
 
+	// Header will be inserted from file by lc3pp
+#if 0
 	print(".Orig x0500\n");
 	print("INIT_CODE\n");
 	/*
@@ -620,6 +622,7 @@ static void progbeg(int argc, char *argv[]) {
 	print("GLOBAL_MAIN_POINTER .FILL main\n");
 	print("STACK_ADDR .FILL xdfff\n");
 	print("SERIAL_MONITOR_ADDR .FILL x0200\n");
+#endif
 
 }
 /************************************************************

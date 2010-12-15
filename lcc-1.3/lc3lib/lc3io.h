@@ -29,7 +29,7 @@
 #define LC3_MCR   0xfffeu
 
 
-#define IO_READY  0x8000u
+#define IO_READY  -0x8000
 
 /* Primitive I/O routines */
 short io_read(unsigned short io_addr);

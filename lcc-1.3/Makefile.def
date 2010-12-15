@@ -71,7 +71,7 @@ install: all
 	${MKDIR} -p ${INSTALL_DIR}
 	-${CP} -f src/rcc${EXE} etc/lcc${EXE} cpp/cpp${EXE} lc3pp/lc3pp${EXE} \
 		${INSTALL_DIR}
-   ${INSTALL_POST_CMD}
+	${INSTALL_POST_CMD}
 	${CHMOD} 555 ${INSTALL_DIR}/rcc${EXE} \
 		${INSTALL_DIR}/lcc${EXE} ${INSTALL_DIR}/cpp${EXE} \
 		${INSTALL_DIR}/lc3pp
