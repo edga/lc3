@@ -1,10 +1,11 @@
 Ddd*gdbInitCommands: \
-graph display `x /xb regs` at (300,35)\n
+graph display `x /xb regs` at (300,35)\n 
 
 Ddd*debugger: gdb
 Ddd*debuggerCommand: @prefix@/bin/lc3db
 
 ! Buttons.
+Ddd*commandToolBar: on
 Ddd*consoleButtons: \
 run//Boot\n \
 step\n \
@@ -15,6 +16,7 @@ run//Boot\nstep\nnext\n
 Ddd*sourceButtons: 
 Ddd*dataButtons: 
 Ddd*verifyButtons: off
+Ddd*indentSource: 4
 
 
 ! DO NOT ADD ANYTHING BELOW THIS LINE -- DDD WILL OVERWRITE IT
@@ -173,7 +175,6 @@ Ddd*groupIconify: off
 Ddd*uniconifyWhenReady: on
 
 ! Command Tool.
-Ddd*commandToolBar: off
 Ddd*toolRightOffset: -578
 Ddd*toolTopOffset: 117
 

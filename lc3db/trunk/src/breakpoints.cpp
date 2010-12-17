@@ -123,7 +123,7 @@ public:
 
 //////////////////////////////////////////////////////////
 // UserBreakpoits class
-int UserBreakpoits::add(uint16_t address)
+int UserBreakpoits::add(uint16_t address, bool temp)
 { 
   BreakpointIterator it = lookupA(address);
   if (it != breakpoints.end()) {
@@ -134,8 +134,12 @@ int UserBreakpoits::add(uint16_t address)
   SourceLocation sl = src_info.find_source_location_short(address);
 
   Breakpoint* b = new Breakpoint(++last_id, address, sl.fileName, sl.lineNo);
+  if (temp) {
+    b->disposition = Delete;
+  }
   breakpoints.push_back(b);
   active_breakpoints.insert(address);
+  //BreakpointsUI::creation(last_id, address, temp, sl.fileName, sl.lineNo);
 
   return last_id;
 }

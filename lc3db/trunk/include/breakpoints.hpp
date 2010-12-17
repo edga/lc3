@@ -52,7 +52,7 @@ public:
   * Enable once/delete  (on hit action)
   * Hit: Check for active breakpoint at address
  */
-  int add(uint16_t address);
+  int add(uint16_t address, bool temp);
   int add(uint16_t address, std::string fileName, int lineNo);
   int erase(int id);
   int setEnabled(int id, bool enable,bool setDisp, BreakpointDisposition disp);

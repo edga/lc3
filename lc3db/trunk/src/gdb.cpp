@@ -217,9 +217,9 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
   show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
 
   signal(SIGINT, sigproc);
+  break_on_return = false;
   while ((cmd = readline(quiet_mode ? "(gdb) " : "(gdb) "))) try {
     int instructions_to_run = 0;
-    break_on_return = false;
 
     if (!*cmd) cmd = last_cmd.c_str();
 #if defined(USE_READLINE)
@@ -267,7 +267,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	printf("Could not find los.obj\n");
       }
     } else if (cmdstr == "finish") {
-      break_on_return = 1;
+      break_on_return = true;
       instructions_to_run = 0x7FFFFFFF;
     } else if (cmdstr == "force" || cmdstr == "f") {
       incmd >> param1 >> param2;
@@ -401,11 +401,13 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       } else {
 	printf("No breakpoint number %d.\n", id);
       }
-    } else if (cmdstr == "break" || cmdstr == "b") {
+    } else if (cmdstr == "break" || cmdstr == "b" ||
+	       cmdstr == "tbreak" || cmdstr == "tb") {
       uint16_t bp_addr;
       bool bp_valid = false;
       size_t colPos;
       incmd >> param1;
+      bool make_temporary = (cmdstr[0] == 't');
 
       if (src_info.symbol.count(param1)) {
 	// Symbol
@@ -433,7 +435,10 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       }
       
       if (bp_valid) {
-	breakpoints.add(bp_addr);
+	int bt_id = breakpoints.add(bp_addr, make_temporary);
+	//if (make_temporary && bt_id > 0) {
+	//  breakpoints.setEnabled(bt_id, true, true, Delete);
+	//}
       } else {
 	printf("breakpoint specification [%s] is not valid\n", param1.c_str());
       }
@@ -549,11 +554,15 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	  break;
 	}
 	// FixMe:
-	if (break_on_return &&
-	    (mem[cpu.PC] == 0xA1A0 || // RET
-	     mem[cpu.PC] == 0x8000)   // RTI
-	    )  {
-	  break;
+	if (break_on_return) {
+	  int i = mem[cpu.PC] & (0xFFFF);
+	  if (i == 0xc1c0 || // RET
+	      i == 0x8000)   // RTI
+	  {
+	    fprintf(stderr, "stopped on return\n");
+	    break_on_return = false;
+	    break;
+	  }
 	}
 	if (temporary_breakpoint == cpu.PC || signal_received) {
 	  signal_received = 0;
