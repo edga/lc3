@@ -70,8 +70,8 @@
 #define BAD_ADDRESS       \
 	"Addresses must be labels or values in the range x0000 to xFFFF."
 
-#ifdef LC3IOEMU_DIR
-#include "LC3IOEMU_DIR/lc3io.h"
+#ifdef USE_LC3IOEMU
+#include <lc3io.h>
 #endif
 /*
    Types of breakpoints.  Currently only user breakpoints are
@@ -563,14 +563,21 @@ read_memory (int addr)
 	case 0xFE06: /* DDR */
 	    return 0x0000;
     	case 0xFFFE: return 0x8000;   /* MCR */
-#ifdef LC3IOEMU_DIR
-	case SW_S:
-	case BTN_S:
-	case SSEG_S:
-	case LED_S:
-		return 0x8000; /* allways ready */
-	case SW_D:
-	case BTN_D:
+#ifdef USE_LC3IOEMU
+	//case STDIN_S :
+        //case STDIN_D :
+        //case STDOUT_S:
+        //case STDOUT_D:
+	case SW_S    :
+        case SW_D    :
+        case BTN_S   :
+        case BTN_D   :
+        case SSEG_S  :
+        case SSEG_D  :
+        case LED_S   :
+        case LED_D   :
+        case PS2KBD_S:
+        case PS2KBD_D:
 		return io_read(addr); /* read from gui */
 #endif
     }
@@ -596,9 +603,21 @@ write_memory (int addr, int value)
 	    if ((value & 0x8000) == 0)
 	    	should_halt = 1;
 	    return;
-#ifdef LC3IOEMU_DIR
-	case SSEG_D:
-	case LED_D:
+#ifdef USE_LC3IOEMU
+	//case STDIN_S :
+        //case STDIN_D :
+        //case STDOUT_S:
+        //case STDOUT_D:
+	case SW_S    :
+        case SW_D    :
+        case BTN_S   :
+        case BTN_D   :
+        case SSEG_S  :
+        case SSEG_D  :
+        case LED_S   :
+        case LED_D   :
+        case PS2KBD_S:
+        case PS2KBD_D:
 		return io_write(addr, value); /* write to gui */
 #endif
     }

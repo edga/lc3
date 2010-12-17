@@ -119,8 +119,8 @@ fi
 
 # LC3IO emulator 
 if [ -n "$LC3IOEMU_DIR" ] ; then
-    OS_SIM_LIBS="$OS_SIM_LIBS \$(shell sdl-config --libs)"
-    EXTRA_FLAGS="$EXTRA_FLAGS -DUSE_LC3IOEMU=1"
+    OS_SIM_LIBS="$OS_SIM_LIBS \$(shell sdl-config --libs) -lSDL_ttf"
+    EXTRA_FLAGS="$EXTRA_FLAGS -I${LC3IOEMU_DIR} -DUSE_LC3IOEMU=1"
 fi
 
 # Splice it all in to Makefile.def to create the Makefile.

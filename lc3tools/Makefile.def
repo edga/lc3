@@ -138,11 +138,11 @@ lc3sim${EXE}: lc3sim.o sim_symbol.o
 	${GCC} ${LDFLAGS} ${RLIPATH} -o lc3sim${EXE} \
 		lc3sim.o sim_symbol.o ${RLLPATH} ${OS_SIM_LIBS}
 else
-lc3sim${EXE}: lc3sim.o sim_symbol.o $(LC3IOEMU_DIR)/lc3io.o
+lc3sim${EXE}: lc3sim.o sim_symbol.o $(LC3IOEMU_DIR)/lc3ioemu.o
 	${GCC} ${LDFLAGS} ${RLIPATH} -o lc3sim${EXE} \
-		lc3sim.o sim_symbol.o $(LC3IOEMU_DIR)/lc3io.o ${RLLPATH} ${OS_SIM_LIBS}
+		lc3sim.o sim_symbol.o $(LC3IOEMU_DIR)/lc3ioemu.o ${RLLPATH} ${OS_SIM_LIBS}
 
-$(LC3IOEMU_DIR)/lc3io.o: $(LC3IOEMU_DIR)/lc3io.c $(LC3IOEMU_DIR)/lc3io.h
+$(LC3IOEMU_DIR)/lc3ioemu.o: $(LC3IOEMU_DIR)/lc3ioemu.c $(LC3IOEMU_DIR)/lc3io.h
 	${GCC} -c ${CFLAGS} -DINSTALL_DIR="\"${INSTALL_DIR}\"" -o $@ $<
 endif
 

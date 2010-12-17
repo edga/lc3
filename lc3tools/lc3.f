@@ -720,7 +720,7 @@ sym_name (const char* name)
     unsigned char* cut;
 
     /* Not fast, but no limit on label length...who cares? */
-    for (cut = local; *cut != 0 && !isspace (*cut) && *cut != ':'; cut++);
+    for (cut = local; *cut != 0 && !isspace (*cut) && *cut != ':' && *cut != ';'; cut++);
     *cut = 0;
 
     return local;
