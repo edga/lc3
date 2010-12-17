@@ -156,6 +156,26 @@ private:
   LC3::CPU &cpu;
 };
 
+extern "C" {
+#include <lc3io.h>
+}
+
+struct GenericIO : public MappedWord
+{
+  GenericIO(uint16_t _addr) {
+    address = _addr;
+  }
+
+  operator int16_t() const { return (int16_t) io_read(address); }
+  GenericIO &operator=(int16_t value) {
+    io_write(address, value);
+    return *this;
+  }
+private:
+  uint16_t address;
+};
+
+
 class Hardware::Implementation
 {
 public:
@@ -168,6 +188,18 @@ public:
     mem.register_dma(DDR::ADDRESS, &ddr);
     mem.register_dma(MCR::ADDRESS, &mcr);
     mem.register_dma(CCR::ADDRESS, &ccr);
+    uint16_t addr;
+    addr = SW_S; mem.register_dma(addr, new GenericIO(addr));
+    addr = SW_D; mem.register_dma(addr, new GenericIO(addr));
+    addr = BTN_S; mem.register_dma(addr, new GenericIO(addr));
+    addr = BTN_D; mem.register_dma(addr, new GenericIO(addr));
+    addr = SSEG_S; mem.register_dma(addr, new GenericIO(addr));
+    addr = SSEG_D; mem.register_dma(addr, new GenericIO(addr));
+    addr = LED_S; mem.register_dma(addr, new GenericIO(addr));
+    addr = LED_D; mem.register_dma(addr, new GenericIO(addr));
+    addr = PS2KBD_S; mem.register_dma(addr, new GenericIO(addr));
+    addr = PS2KBD_D; mem.register_dma(addr, new GenericIO(addr));
+
     // Set the terminal to non-echo mode
     set_tty(fileno(stdin), fileno(stdout));
 
@@ -201,7 +233,7 @@ public:
     tcgetattr(fd, &new_termios);
     termios_original = new_termios;
     new_termios.c_lflag &= ~(ICANON | ECHO);
-    // FixMe:
+    // FixMe: this is work around for using same tty for both program and commands
     if (fd != fileno(stdin)) {
       tcsetattr(fd, TCSAFLUSH, &new_termios);
     }
