@@ -231,7 +231,11 @@ REGISTER [rR][0-7]
 HEX      [xX][-]?[0-9a-fA-F]+
 DECIMAL  [#]?[-]?[0-9]+
 IMMED    {HEX}|{DECIMAL}
+/*
+ * Made same as windows assembler/
 LABEL    [A-Za-z][A-Za-z_0-9]*
+ */
+LABEL    [_A-Za-z][A-Za-z_0-9]*
 /* strings with no carriage returns */
 STRING   \"([^"\n\r\\]*\\[^\n\r])*[^"\n\r\\]*\" 
 
@@ -247,7 +251,7 @@ STRLINE  ([^"\n\r\\]*\\[^\n\r])*[^"\n\r\\]*
 
 /* operand and white space specification */
 SPACE    [ \t]
-OP_SEP   {SPACE}*,{SPACE}*
+OP_SEP   {SPACE}*[, \t]{SPACE}*
 COMMENT  [;][^\n\r]*
 ENDLINE  {SPACE}*{COMMENT}?\n\r?
 
@@ -585,7 +589,7 @@ sym_name (const char* name)
     unsigned char* cut;
 
     /* Not fast, but no limit on label length...who cares? */
-    for (cut = local; *cut != 0 && !isspace (*cut) && *cut != ':'; cut++);
+    for (cut = local; *cut != 0 && !isspace (*cut) && *cut != ':' && *cut != ';'; cut++);
     *cut = 0;
 
     return local;
@@ -640,17 +644,23 @@ generate_instruction (operands_t operands, const char* opstr)
 	bad_operands ();
 	return;
     }
+
+    /* o1 = start of op1 */
     o1 = opstr;
-    while (isspace (*o1)) o1++;
-    if ((o2 = strchr (o1, ',')) != NULL) {
-        o2++;
-	while (isspace (*o2)) o2++;
-	if ((o3 = strchr (o2, ',')) != NULL) {
-	    o3++;
-	    while (isspace (*o3)) o3++;
-	}
-    } else
-    	o3 = NULL;
+    while (isspace (*o1)) o1++;	 /* skip spaces before op1 */
+
+    /* o2 = start of op2 */
+    o2=o1; while (*o2!=',' && !isspace(*o2)) o2++; /* o2 = to the end of op1 */
+    while (isspace (*o2)) o2++;	 /* skip spaces before ',' */
+    if (*o2==',') o2++;
+    while (isspace (*o2)) o2++;	 /* skip spaces before op2 */
+
+    /* o3 = start of op3 */
+    o3=o2; while (*o3!=',' && !isspace(*o3)) o3++; /* o3 = to the end of op2 */
+    while (isspace (*o3)) o3++;	 /* skip spaces before ',' */
+    if (*o3==',') o3++;
+    while (isspace (*o3)) o3++;	 /* skip spaces before op3 */
+
     if (inst.op == OP_ORIG) {
 	if (saw_orig == 0) {
 	    if (read_val (o1, &code_loc, 16) == -1)
