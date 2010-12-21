@@ -156,6 +156,8 @@ private:
   LC3::CPU &cpu;
 };
 
+#ifdef USE_LC3_IO_EMU    
+
 extern "C" {
 #include <lc3io.h>
 }
@@ -174,7 +176,7 @@ struct GenericIO : public MappedWord
 private:
   uint16_t address;
 };
-
+#endif
 
 class Hardware::Implementation
 {
@@ -188,7 +190,9 @@ public:
     mem.register_dma(DDR::ADDRESS, &ddr);
     mem.register_dma(MCR::ADDRESS, &mcr);
     mem.register_dma(CCR::ADDRESS, &ccr);
-    uint16_t addr;
+
+#ifdef USE_LC3_IO_EMU    
+	uint16_t addr;
     addr = SW_S; mem.register_dma(addr, new GenericIO(addr));
     addr = SW_D; mem.register_dma(addr, new GenericIO(addr));
     addr = BTN_S; mem.register_dma(addr, new GenericIO(addr));
@@ -199,6 +203,7 @@ public:
     addr = LED_D; mem.register_dma(addr, new GenericIO(addr));
     addr = PS2KBD_S; mem.register_dma(addr, new GenericIO(addr));
     addr = PS2KBD_D; mem.register_dma(addr, new GenericIO(addr));
+#endif
 
     // Set the terminal to non-echo mode
     set_tty(fileno(stdin), fileno(stdout));
