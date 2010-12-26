@@ -5,22 +5,22 @@
  * "Copyright (c) 2003 by Steven S. Lumetta."
  *
  * Permission to use, copy, modify, and distribute this software and its
- * documentation for any purpose, without fee, and without written 
+ * documentation for any purpose, without fee, and without written
  * agreement is hereby granted, provided that the above copyright notice
  * and the following two paragraphs appear in all copies of this software,
  * that the files COPYING and NO_WARRANTY are included verbatim with
  * any distribution, and that the contents of the file README are included
  * verbatim as part of a file named README with any distribution.
- * 
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE TO ANY PARTY FOR DIRECT, 
- * INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT 
- * OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE AUTHOR 
+ *
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE TO ANY PARTY FOR DIRECT,
+ * INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT
+ * OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE AUTHOR
  * HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- * 
- * THE AUTHOR SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT 
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR 
- * A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS" 
- * BASIS, AND THE AUTHOR NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, 
+ *
+ * THE AUTHOR SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS"
+ * BASIS, AND THE AUTHOR NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT,
  * UPDATES, ENHANCEMENTS, OR MODIFICATIONS."
  *
  * Author:	    Steve Lumetta
@@ -49,7 +49,7 @@ symbol_hash (const char* symbol)
     int h = 1;
 
     while (*symbol != 0)
-	h = (h * tolower (*symbol++)) % SYMBOL_HASH;
+	h = (h * tolower ((unsigned char)*symbol++)) % SYMBOL_HASH;
 
     return h;
 }
@@ -75,7 +75,7 @@ add_symbol (const char* symbol, int addr, int dup_ok)
     symbol_t* sym;
 
     if ((sym = find_symbol (symbol, &h)) == NULL) {
-	sym = (symbol_t*)malloc (sizeof (symbol_t)); 
+	sym = (symbol_t*)malloc (sizeof (symbol_t));
 	sym->name = strdup (symbol);
 	sym->next_with_hash = lc3_sym_hash[h];
 	lc3_sym_hash[h] = sym;
@@ -83,7 +83,7 @@ add_symbol (const char* symbol, int addr, int dup_ok)
 	sym->next_at_loc = lc3_sym_names[addr];
 	lc3_sym_names[addr] = sym;
 #endif
-    } else if (!dup_ok) 
+    } else if (!dup_ok)
         return -1;
     sym->addr = addr;
     return 0;
@@ -100,7 +100,7 @@ remove_symbol_at_addr (int addr)
 
     while ((s = lc3_sym_names[addr]) != NULL) {
         h = symbol_hash (s->name);
-	for (find = &lc3_sym_hash[h]; *find != s; 
+	for (find = &lc3_sym_hash[h]; *find != s;
 	     find = &(*find)->next_with_hash);
         *find = s->next_with_hash;
 	lc3_sym_names[addr] = s->next_at_loc;

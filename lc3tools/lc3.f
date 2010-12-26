@@ -689,8 +689,8 @@ write_value (int val, int dbg)
 {
     static int old_line = -1;
     static int old_loc = -1;
-    unsigned char out[2];
-    unsigned char bits[16+1];
+    char out[2];
+    char bits[16+1];
     int i;
     int this_loc = code_loc;
 
@@ -749,11 +749,11 @@ write_value (int val, int dbg)
 static char*
 sym_name (const char* name)
 {
-    unsigned char* local = strdup (name);
-    unsigned char* cut;
+    char* local = strdup (name);
+    char* cut;
 
     /* Not fast, but no limit on label length...who cares? */
-    for (cut = local; *cut != 0 && !isspace (*cut) && *cut != ':' && *cut != ';'; cut++);
+    for (cut = local; *cut != 0 && !isspace((unsigned char)*cut) && *cut != ':' && *cut != ';'; cut++);
     *cut = 0;
 
     return local;
@@ -762,7 +762,7 @@ sym_name (const char* name)
 static int
 find_label (const char* optarg, int bits)
 {
-    unsigned char* local;
+    char* local;
     symbol_t* label;
     int limit, value;
 
@@ -799,10 +799,10 @@ static void
 generate_instruction (operands_t operands, const char* opstr)
 {
     int val, r1, r2, r3;
-    const unsigned char* o1;
-    const unsigned char* o2;
-    const unsigned char* o3;
-    const unsigned char* str;
+    const char* o1;
+    const char* o2;
+    const char* o3;
+    const char* str;
 
     if ((op_format_ok[inst.op] & (1UL << operands)) == 0) {
 	bad_operands ();
@@ -811,19 +811,19 @@ generate_instruction (operands_t operands, const char* opstr)
 
     /* o1 = start of op1 */
     o1 = opstr;
-    while (isspace (*o1)) o1++;	 /* skip spaces before op1 */
+    while (isspace((unsigned char)*o1)) o1++;	 /* skip spaces before op1 */
 
     /* o2 = start of op2 */
-    o2=o1; while (*o2!=',' && !isspace(*o2)) o2++; /* o2 = to the end of op1 */
-    while (isspace (*o2)) o2++;	 /* skip spaces before ',' */
+    o2=o1; while (*o2!=',' && !isspace((unsigned char)*o2)) o2++; /* o2 = to the end of op1 */
+    while (isspace((unsigned char)*o2)) o2++;	 /* skip spaces before ',' */
     if (*o2==',') o2++;
-    while (isspace (*o2)) o2++;	 /* skip spaces before op2 */
+    while (isspace((unsigned char)*o2)) o2++;	 /* skip spaces before op2 */
 
     /* o3 = start of op3 */
-    o3=o2; while (*o3!=',' && !isspace(*o3)) o3++; /* o3 = to the end of op2 */
-    while (isspace (*o3)) o3++;	 /* skip spaces before ',' */
+    o3=o2; while (*o3!=',' && !isspace((unsigned char)*o3)) o3++; /* o3 = to the end of op2 */
+    while (isspace((unsigned char)*o3)) o3++;	 /* skip spaces before ',' */
     if (*o3==',') o3++;
-    while (isspace (*o3)) o3++;	 /* skip spaces before op3 */
+    while (isspace((unsigned char)*o3)) o3++;	 /* skip spaces before op3 */
 
     if (inst.op == OP_ORIG) {
 	if (saw_orig == 0) {
@@ -1082,7 +1082,7 @@ parse_ccode (const char* ccstr)
 static void
 found_label (const char* lname) 
 {
-    unsigned char* local = sym_name (lname);
+    char* local = sym_name (lname);
 
     if (pass == 1) {
 	if (saw_orig == 0) {

@@ -89,9 +89,9 @@ static void print_register (int which);
 static void print_registers ();
 static void dump_delayed_mem_updates ();
 static void show_state_if_stop_visible ();
-static int read_obj_file (const unsigned char* filename, int* startp,
+static int read_obj_file (const char* filename, int* startp,
 			  int* endp);
-static int read_sym_file (const unsigned char* filename);
+static int read_sym_file (const char* filename);
 static void squash_symbols (int addr_s, int addr_e);
 static int execute_instruction ();
 static void disassemble_one (int addr);
@@ -103,31 +103,31 @@ static void clear_all_breakpoints ();
 static void list_breakpoints ();
 static void set_breakpoint (int addr);
 static void warn_too_many_args ();
-static void no_args_allowed (const unsigned char* args);
-static int parse_address (const unsigned char* addr);
-static int parse_range (const unsigned char* cmd, int* startptr, int* endptr,
+static void no_args_allowed (const char* args);
+static int parse_address (const char* addr);
+static int parse_range (const char* cmd, int* startptr, int* endptr,
 			int last_end, int scale);
 static void flush_console_input ();
 static void gui_stop_and_dump ();
 
-static void cmd_break     (const unsigned char* args);
-static void cmd_continue  (const unsigned char* args);
-static void cmd_dump      (const unsigned char* args);
-static void cmd_execute   (const unsigned char* args);
-static void cmd_file      (const unsigned char* args);
-static void cmd_finish    (const unsigned char* args);
-static void cmd_help      (const unsigned char* args);
-static void cmd_list      (const unsigned char* args);
-static void cmd_memory    (const unsigned char* args);
-static void cmd_next      (const unsigned char* args);
-static void cmd_option    (const unsigned char* args);
-static void cmd_printregs (const unsigned char* args);
-static void cmd_quit      (const unsigned char* args);
-static void cmd_register  (const unsigned char* args);
-static void cmd_reset     (const unsigned char* args);
-static void cmd_step      (const unsigned char* args);
-static void cmd_translate (const unsigned char* args);
-static void cmd_lc3_stop  (const unsigned char* args);
+static void cmd_break     (const char* args);
+static void cmd_continue  (const char* args);
+static void cmd_dump      (const char* args);
+static void cmd_execute   (const char* args);
+static void cmd_file      (const char* args);
+static void cmd_finish    (const char* args);
+static void cmd_help      (const char* args);
+static void cmd_list      (const char* args);
+static void cmd_memory    (const char* args);
+static void cmd_next      (const char* args);
+static void cmd_option    (const char* args);
+static void cmd_printregs (const char* args);
+static void cmd_quit      (const char* args);
+static void cmd_register  (const char* args);
+static void cmd_reset     (const char* args);
+static void cmd_step      (const char* args);
+static void cmd_translate (const char* args);
+static void cmd_lc3_stop  (const char* args);
 
 typedef enum cmd_flag_t cmd_flag_t;
 enum cmd_flag_t {
@@ -139,9 +139,9 @@ enum cmd_flag_t {
 
 typedef struct command_t command_t;
 struct command_t {
-    unsigned char* command;  /* string for command                     */
+    char* command;  /* string for command                     */
     int min_len;    /* minimum length for abbrevation--typically 1     */
-    void (*cmd_func) (const unsigned char*);
+    void (*cmd_func) (const char*);
                     /* function implementing command                   */
     cmd_flag_t flags; /* flags for command properties                  */
 };
@@ -391,22 +391,22 @@ static void
 command_loop ()
 {
     int cword_len;
-    unsigned char* cmd = NULL;
-    unsigned char* start;
-    unsigned char* last_cmd = NULL;
-    unsigned char cword[MAX_CMD_WORD_LEN];
+    char* cmd = NULL;
+    char* start;
+    char* last_cmd = NULL;
+    char cword[MAX_CMD_WORD_LEN];
     const command_t* a_command;
 
     while (!stop_scripts && (cmd = lc3readline ("(lc3sim) ")) != NULL) {
 	/* Skip white space. */
-	for (start = cmd; isspace (*start); start++);
+	for (start = cmd; isspace((unsigned char)*start); start++);
 	if (*start == '\0') {
 	    /* An empty line repeats the last command, if allowed. */
 	    free (cmd);
 	    if ((cmd = last_cmd) == NULL)
 	    	continue;
 	    /* Skip white space. */
-	    for (start = cmd; isspace (*start); start++);
+	    for (start = cmd; isspace((unsigned char)*start); start++);
 	} else if (last_cmd != NULL)
 	    free (last_cmd);
 	last_cmd = NULL;
@@ -420,7 +420,7 @@ command_loop ()
 
 	/* Record command word length, then point to arguments. */
 	cword_len = strlen (cword);
-	for (start += cword_len; isspace (*start); start++);
+	for (start += cword_len; isspace((unsigned char)*start); start++);
 
 	/* Match command word to list of commands. */
 	a_command = command;
@@ -446,7 +446,7 @@ command_loop ()
 
 		/* Handle list type and repeatable commands. */
 		if (a_command->flags & CMD_FLAG_LIST_TYPE) {
-		    unsigned char buf[MAX_CMD_WORD_LEN + 5];
+		    char buf[MAX_CMD_WORD_LEN + 5];
 
 		    strcpy (buf, cword);
 		    strcat (buf, " more");
@@ -636,7 +636,7 @@ write_memory (int addr, int value)
 }
 
 static int
-read_obj_file (const unsigned char* filename, int* startp, int* endp)
+read_obj_file (const char* filename, int* startp, int* endp)
 {
     FILE* f;
     int start, addr;
@@ -662,12 +662,12 @@ read_obj_file (const unsigned char* filename, int* startp, int* endp)
 }
 
 static int
-read_sym_file (const unsigned char* filename)
+read_sym_file (const char* filename)
 {
     FILE* f;
     int adding = 0;
-    unsigned char buf[100];
-    unsigned char sym[81];
+    char buf[100];
+    char sym[81];
     int addr;
 
     if ((f = fopen (filename, "r")) == NULL)
@@ -856,7 +856,7 @@ print_operands (int addr, int inst, format_t fmt)
 	    case 44: printf ("'\\''"); break;
 	    case 92: printf ("'\\\\'"); break;
 	    default:
-	    	if (isprint (F_vec8 (inst)))
+	    	if (isprint((unsigned char)F_vec8 (inst)))
 		    printf ("'%c'", F_vec8 (inst));
 		else
 		    printf ("x%02X", F_vec8 (inst));
@@ -968,7 +968,7 @@ dump_memory (int addr_s, int addr_e)
 	printf (" ");
 	for (i = 0, addr = start; i < 12; i++, addr++) {
 	    if (addr >= addr_s && addr < addr_e)
-	        printf ("%c", (a[i] < 0x100 && isprint (a[i])) ? a[i] : '.');
+	        printf ("%c", (a[i] < 0x100 && isprint((unsigned char)a[i])) ? a[i] : '.');
 	    else
 	        printf (" ");
 	}
@@ -1115,9 +1115,9 @@ set_breakpoint (int addr)
 
 
 static void
-cmd_break (const unsigned char* args)
+cmd_break (const char* args)
 {
-    unsigned char opt[11], addr_str[MAX_LABEL_LEN], trash[2];
+    char opt[11], addr_str[MAX_LABEL_LEN], trash[2];
     int num_args, opt_len, addr;
 
     /* 80 == MAX_LABEL_LEN - 1 */
@@ -1176,7 +1176,7 @@ warn_too_many_args ()
 
 
 static void
-no_args_allowed (const unsigned char* args)
+no_args_allowed (const char* args)
 {
     if (*args != '\0')
         warn_too_many_args ();
@@ -1184,7 +1184,7 @@ no_args_allowed (const unsigned char* args)
 
 
 static void
-cmd_continue (const unsigned char* args)
+cmd_continue (const char* args)
 {
     no_args_allowed (args);
     if (interrupted_at_gui_request)
@@ -1196,7 +1196,7 @@ cmd_continue (const unsigned char* args)
 
 
 static void
-cmd_dump (const unsigned char* args)
+cmd_dump (const char* args)
 {
     static int last_end = 0;
     int start, end;
@@ -1218,7 +1218,7 @@ cmd_dump (const unsigned char* args)
 
 
 static void
-cmd_execute (const unsigned char* args)
+cmd_execute (const char* args)
 {
     FILE* previous_input;
     FILE* script;
@@ -1267,11 +1267,11 @@ cmd_execute (const unsigned char* args)
 
 
 static void
-cmd_file (const unsigned char* args)
+cmd_file (const char* args)
 {
     /* extra 4 chars in buf for ".obj" possibly added later */
-    unsigned char buf[MAX_FILE_NAME_LEN + 4];
-    unsigned char* ext;
+    char buf[MAX_FILE_NAME_LEN + 4];
+    char* ext;
     int len, start, end, warn = 0;
 
     len = strlen (args);
@@ -1348,7 +1348,7 @@ cmd_file (const unsigned char* args)
 
 
 static void
-cmd_finish (const unsigned char* args)
+cmd_finish (const char* args)
 {
     no_args_allowed (args);
     flush_console_input ();
@@ -1358,7 +1358,7 @@ cmd_finish (const unsigned char* args)
 
 
 static void
-cmd_help (const unsigned char* args)
+cmd_help (const char* args)
 {
     printf ("file <file>           -- file load (also sets PC to start of "
     	    "file)\n\n");
@@ -1399,12 +1399,12 @@ cmd_help (const unsigned char* args)
 
 
 static int
-parse_address (const unsigned char* addr)
+parse_address (const char* addr)
 {
     symbol_t* label;
-    unsigned char* fmt;
+    char* fmt;
     int value, negated;
-    unsigned char trash[2];
+    char trash[2];
 
     /* default matching order: symbol, hexadecimal */
     /* hexadecimal can optionally be preceded by x or X */
@@ -1437,10 +1437,10 @@ parse_address (const unsigned char* addr)
 
 
 static int
-parse_range (const unsigned char* args, int* startptr, int* endptr,
+parse_range (const char* args, int* startptr, int* endptr,
              int last_end, int scale)
 {
-    unsigned char arg1[MAX_LABEL_LEN], arg2[MAX_LABEL_LEN], trash[2];
+    char arg1[MAX_LABEL_LEN], arg2[MAX_LABEL_LEN], trash[2];
     int num_args, start, end;
 
     /* Split and count the arguments. */
@@ -1501,7 +1501,7 @@ success:
 
 
 static void
-cmd_list (const unsigned char* args)
+cmd_list (const char* args)
 {
     static int last_end = 0;
     int start, end;
@@ -1523,7 +1523,7 @@ cmd_list (const unsigned char* args)
 
 
 static void
-cmd_memory (const unsigned char* args)
+cmd_memory (const char* args)
 {
     int addr, value;
 
@@ -1547,9 +1547,9 @@ cmd_memory (const unsigned char* args)
 
 
 static void
-cmd_option (const unsigned char* args)
+cmd_option (const char* args)
 {
-    unsigned char opt[11], onoff[6], trash[2];
+    char opt[11], onoff[6], trash[2];
     int num_args, opt_len, oval;
 
     num_args = sscanf (args, "%10s%5s%1s", opt, onoff, trash);
@@ -1625,7 +1625,7 @@ show_syntax:
 
 
 static void
-cmd_next (const unsigned char* args)
+cmd_next (const char* args)
 {
     int next_pc = (REG (R_PC) + 1) & 0xFFFF;
 
@@ -1654,7 +1654,7 @@ cmd_next (const unsigned char* args)
 
 
 static void
-cmd_printregs (const unsigned char* args)
+cmd_printregs (const char* args)
 {
     no_args_allowed (args);
     print_registers ();
@@ -1662,7 +1662,7 @@ cmd_printregs (const unsigned char* args)
 
 
 static void
-cmd_quit (const unsigned char* args)
+cmd_quit (const char* args)
 {
     no_args_allowed (args);
     exit (0);
@@ -1670,16 +1670,16 @@ cmd_quit (const unsigned char* args)
 
 
 static void
-cmd_register (const unsigned char* args)
+cmd_register (const char* args)
 {
-    static const unsigned char* const rname[NUM_REGS + 1] = {
+    static const char* const rname[NUM_REGS + 1] = {
     	"R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7",
     	"PC", "IR", "PSR", "CC"
     };
-    static const unsigned char* const cc_val[4] = {
+    static const char* const cc_val[4] = {
 	"POSITIVE", "ZERO", "", "NEGATIVE"
     };
-    unsigned char arg1[MAX_LABEL_LEN], arg2[MAX_LABEL_LEN], trash[2];
+    char arg1[MAX_LABEL_LEN], arg2[MAX_LABEL_LEN], trash[2];
     int num_args, rnum, value, len;
 
     /* 80 == MAX_LABEL_LEN - 1 */
@@ -1743,7 +1743,7 @@ cmd_register (const unsigned char* args)
 
 
 static void
-cmd_reset (const unsigned char* args)
+cmd_reset (const char* args)
 {
     int addr;
 
@@ -1786,7 +1786,7 @@ cmd_reset (const unsigned char* args)
 
 
 static void
-cmd_step (const unsigned char* args)
+cmd_step (const char* args)
 {
     no_args_allowed (args);
     flush_console_input ();
@@ -1797,9 +1797,9 @@ cmd_step (const unsigned char* args)
 
 
 static void
-cmd_translate (const unsigned char* args)
+cmd_translate (const char* args)
 {
-    unsigned char arg1[81], trash[2];
+    char arg1[81], trash[2];
     int num_args, value;
 
     /* 80 == MAX_LABEL_LEN - 1 */
@@ -1847,7 +1847,7 @@ gui_stop_and_dump ()
 
 
 static void
-cmd_lc3_stop (const unsigned char* args)
+cmd_lc3_stop (const char* args)
 {
     /* GUI only, so no need to warn about args. */
     /* Stop execution and dump state. */
