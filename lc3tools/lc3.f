@@ -251,6 +251,7 @@ static int code_orig;
 static inst_t inst;
 static FILE* symout;
 static FILE* objout;
+static FILE* dbgout;
 /*
  * "base.bin" file used to initialize content of memory in VHDL code.
  * Each generated word is output on separate line as sequence of 16 characters ('1' or '0')
@@ -278,13 +279,17 @@ REGISTER [rR][0-7]
 HEX      [xX][-]?[0-9a-fA-F]+
 DECIMAL  [#]?[-]?[0-9]+
 IMMED    {HEX}|{DECIMAL}
+/*
+ * Made same as windows assembler/
 LABEL    [A-Za-z][A-Za-z_0-9]*
+ */
+LABEL    [_A-Za-z][A-Za-z_0-9]*
 STRING   \"([^\"]*|(\\\"))*\"
 UTSTRING \"[^\n\r]*
 
 /* operand and white space specification */
 SPACE     [ \t]
-OP_SEP    {SPACE}*,{SPACE}*
+OP_SEP    {SPACE}*[, \t]{SPACE}*
 COMMENT   [;][^\n\r]*
 EMPTYLINE {SPACE}*{COMMENT}?
 ENDLINE   {EMPTYLINE}\r?\n\r?
@@ -451,17 +456,27 @@ main (int argc, char** argv)
         fprintf (stderr, "Could not open %s for writing.\n", fname);
 	return 2;
     }
+    strcpy(ext, ".dbg");
+    if ((dbgout = fopen (fname, "w")) == NULL) {
+	 fprintf (stderr, "Could not open %s for writing.\n", fname);
+	 return 2;
+    } else {
+	char buf[512];
+        char *cwd = getcwd(buf, sizeof(buf));
+        fprintf(dbgout, "%s/%s\n", cwd, argv[1]);
+    }
     strcpy (ext, ".sym");
     if ((symout = fopen (fname, "w")) == NULL) {
         fprintf (stderr, "Could not open %s for writing.\n", fname);
 	return 2;
+    } else {
+        /* FIXME: Do we really need to exactly match old format for compatibility 
+           with Windows simulator? */
+        fprintf (symout, "// Symbol table\n");
+        fprintf (symout, "// Scope level 0:\n");
+        fprintf (symout, "//\tSymbol Name       Page Address\n");
+        fprintf (symout, "//\t----------------  ------------\n");
     }
-    /* FIXME: Do we really need to exactly match old format for compatibility 
-       with Windows simulator? */
-    fprintf (symout, "// Symbol table\n");
-    fprintf (symout, "// Scope level 0:\n");
-    fprintf (symout, "//\tSymbol Name       Page Address\n");
-    fprintf (symout, "//\t----------------  ------------\n");
 
     puts ("STARTING PASS 1");
     pass = 1;
@@ -517,12 +532,13 @@ main (int argc, char** argv)
     fclose (symout);
     fclose (objout);
     fclose (binout);
-	/* VHDL constants file */
-	if (vcout_line_addr <= code_loc) {
-    	fprintf(vcout, " -- addr 0x%04x to 0x%04x\nothers => X\"0000\"\n", vcout_line_addr, code_loc);
+    fclose (dbgout);
+    /* VHDL constants file */
+    if (vcout_line_addr <= code_loc) {
+        fprintf(vcout, " -- addr 0x%04x to 0x%04x\nothers => X\"0000\"\n", vcout_line_addr, code_loc);
     } else
     	fprintf(vcout, "others => X\"0000\"\n");
-	fclose(vcout);
+    fclose(vcout);
 
     return 0;
 }
@@ -669,8 +685,10 @@ read_unsigned_val (const char* s, int* vptr, int bits)
 }
 
 static void
-write_value (int val)
+write_value (int val, int dbg)
 {
+    static int old_line = -1;
+    static int old_loc = -1;
     unsigned char out[2];
     unsigned char bits[16+1];
     int i;
@@ -684,22 +702,37 @@ write_value (int val)
     out[0] = (val >> 8);
     out[1] = (val & 0xFF);
     fwrite (out, 2, 1, objout);
-    if (!saw_orig) {
-    	/* First line of VHDL constants file */
-      if (this_loc != 0) {
-          fprintf(vcout, "%d to 16#%x# => X\"0000\", -- addr 0x%04x to 0x%04x\n", 
-                    0, this_loc-1, 0, this_loc-1);
-     }
-      vcout_line_addr = val;
+    if (!saw_orig) { /* This is first word (offset, not an instruction) */
+        /* 
+         * VHDL constants file
+         */
+        if (this_loc != 0) {
+            fprintf(vcout, "%d to 16#%x# => X\"0000\", -- addr 0x%04x to 0x%04x\n", 
+                0, this_loc-1, 0, this_loc-1);
+        }
+        vcout_line_addr = val;
     } else { /* don't write the offset (the first word) into bin file */
-    	/* Store VHDL constants file */
+        /*
+         * dbgout 
+         */
+        if (dbg && old_line != line_num && old_loc != code_loc) {
+            fprintf (dbgout, "@%d:%.4x\n", line_num, code_loc - 1);
+            old_line = line_num;
+            old_loc = code_loc;
+        }
+
+    	/*
+         * VHDL constants file
+         */
     	if (this_loc % 8 == 7) {
 	    	fprintf(vcout, "X\"%04x\",  -- addr 0x%04x to 0x%04x\n", val, vcout_line_addr, this_loc);
 	    	vcout_line_addr = this_loc+1;
 	    } else
 	    	fprintf(vcout, "X\"%04x\", ", val);
 	    	
-        /* Store Bits file */
+        /*
+         * Bits file
+         */
         bits[0] = '\n';
         for (i=1; i <= 16; i++)
             bits[i] = (val & (1U << (16-i))) ? '1' : '0';
@@ -775,17 +808,23 @@ generate_instruction (operands_t operands, const char* opstr)
 	bad_operands ();
 	return;
     }
+
+    /* o1 = start of op1 */
     o1 = opstr;
-    while (isspace (*o1)) o1++;
-    if ((o2 = strchr (o1, ',')) != NULL) {
-        o2++;
-	while (isspace (*o2)) o2++;
-	if ((o3 = strchr (o2, ',')) != NULL) {
-	    o3++;
-	    while (isspace (*o3)) o3++;
-	}
-    } else
-    	o3 = NULL;
+    while (isspace (*o1)) o1++;	 /* skip spaces before op1 */
+
+    /* o2 = start of op2 */
+    o2=o1; while (*o2!=',' && !isspace(*o2)) o2++; /* o2 = to the end of op1 */
+    while (isspace (*o2)) o2++;	 /* skip spaces before ',' */
+    if (*o2==',') o2++;
+    while (isspace (*o2)) o2++;	 /* skip spaces before op2 */
+
+    /* o3 = start of op3 */
+    o3=o2; while (*o3!=',' && !isspace(*o3)) o3++; /* o3 = to the end of op2 */
+    while (isspace (*o3)) o3++;	 /* skip spaces before ',' */
+    if (*o3==',') o3++;
+    while (isspace (*o3)) o3++;	 /* skip spaces before op3 */
+
     if (inst.op == OP_ORIG) {
 	if (saw_orig == 0) {
 	    if (read_val (o1, &code_loc, 16) == -1)
@@ -794,7 +833,7 @@ generate_instruction (operands_t operands, const char* opstr)
 		code_loc = 0x3000; 
 	    else {
                 code_orig = code_loc;        /* remember orig to calculate size of code block */
-	        write_value (code_loc);
+	        write_value (code_loc, 0);
 		code_loc--; /* Starting point doesn't count as code. */
 	    }
 	    saw_orig = 1;
@@ -832,80 +871,80 @@ generate_instruction (operands_t operands, const char* opstr)
 	    	/* Check or read immediate range (error in first pass
 		   prevents execution of second, so never fails). */
 	        (void)read_signed_val (o3, &val, 5);
-		write_value (0x1020 | (r1 << 9) | (r2 << 6) | (val & 0x1F));
+		write_value (0x1020 | (r1 << 9) | (r2 << 6) | (val & 0x1F), 1);
 	    } else
-		write_value (0x1000 | (r1 << 9) | (r2 << 6) | r3);
+		write_value (0x1000 | (r1 << 9) | (r2 << 6) | r3, 1);
 	    break;
 	case OP_AND:
 	    if (operands == O_RRI) {
 	    	/* Check or read immediate range (error in first pass
 		   prevents execution of second, so never fails). */
 	        (void)read_signed_val (o3, &val, 5);
-		write_value (0x5020 | (r1 << 9) | (r2 << 6) | (val & 0x1F));
+		write_value (0x5020 | (r1 << 9) | (r2 << 6) | (val & 0x1F), 1);
 	    } else
-		write_value (0x5000 | (r1 << 9) | (r2 << 6) | r3);
+		write_value (0x5000 | (r1 << 9) | (r2 << 6) | r3, 1);
 	    break;
 	case OP_BR:
 	    if (operands == O_I)
 	        (void)read_signed_val (o1, &val, 9);
 	    else /* O_L */
 	        val = find_label (o1, 9);
-	    write_value (inst.ccode | (val & 0x1FF));
+	    write_value (inst.ccode | (val & 0x1FF), 1);
 	    break;
 	case OP_JMP:
-	    write_value (0xC000 | (r1 << 6));
+	    write_value (0xC000 | (r1 << 6),1);
 	    break;
 	case OP_JSR:
 	    if (operands == O_I)
 	        (void)read_signed_val (o1, &val, 11);
 	    else /* O_L */
 	        val = find_label (o1, 11);
-	    write_value (0x4800 | (val & 0x7FF));
+	    write_value (0x4800 | (val & 0x7FF), 1);
 	    break;
 	case OP_JSRR:
-	    write_value (0x4000 | (r1 << 6));
+	    write_value (0x4000 | (r1 << 6), 1);
 	    break;
 	case OP_LD:
-	    write_value (0x2000 | (r1 << 9) | (val & 0x1FF));
+	    write_value (0x2000 | (r1 << 9) | (val & 0x1FF), 1);
 	    break;
 	case OP_LDI:
-	    write_value (0xA000 | (r1 << 9) | (val & 0x1FF));
+	    write_value (0xA000 | (r1 << 9) | (val & 0x1FF), 1);
 	    break;
 	case OP_LDR:
 	    (void)read_signed_val (o3, &val, 6);
-	    write_value (0x6000 | (r1 << 9) | (r2 << 6) | (val & 0x3F));
+	    write_value (0x6000 | (r1 << 9) | (r2 << 6) | (val & 0x3F), 1);
 	    break;
 	case OP_LEA:
-	    write_value (0xE000 | (r1 << 9) | (val & 0x1FF));
+	    write_value (0xE000 | (r1 << 9) | (val & 0x1FF), 1);
 	    break;
 	case OP_NOT:
-	    write_value (0x903F | (r1 << 9) | (r2 << 6));
+	    write_value (0x903F | (r1 << 9) | (r2 << 6), 1);
 	    break;
 	case OP_RTI:
-	    write_value (0x8000);
+	    write_value (0x8000, 1);
 	    break;
 	case OP_ST:
-	    write_value (0x3000 | (r1 << 9) | (val & 0x1FF));
+	    write_value (0x3000 | (r1 << 9) | (val & 0x1FF), 1);
 	    break;
 	case OP_STI:
-	    write_value (0xB000 | (r1 << 9) | (val & 0x1FF));
+	    write_value (0xB000 | (r1 << 9) | (val & 0x1FF), 1);
 	    break;
 	case OP_STR:
 	    (void)read_signed_val (o3, &val, 6);
-	    write_value (0x7000 | (r1 << 9) | (r2 << 6) | (val & 0x3F));
+	    write_value (0x7000 | (r1 << 9) | (r2 << 6) | (val & 0x3F), 1);
 	    break;
 	case OP_TRAP:
 	    (void)read_unsigned_val (o1, &val, 8);
-	    write_value (0xF000 | (val & 0xFF));
+	    write_value (0xF000 | (val & 0xFF),1);
 	    break;
 
 	/* Generate trap pseudo-ops. */
-	case OP_GETC:  write_value (0xF020); break;
-	case OP_HALT:  write_value (0xF025); break;
-	case OP_IN:    write_value (0xF023); break;
-	case OP_OUT:   write_value (0xF021); break;
-	case OP_PUTS:  write_value (0xF022); break;
-	case OP_PUTSP: write_value (0xF024); break;
+	case OP_GETC:  write_value (0xF020,1); break;
+	case OP_HALT:  write_value (0xF025,1); break;
+	case OP_IN:    write_value (0xF023,1); break;
+	case OP_OUT:   write_value (0xF021,1); break;
+	case OP_PUTS:  write_value (0xF022,1); break;
+	case OP_PUTSP: write_value (0xF024,1); break;
 
 	/* Generate non-trap pseudo-ops. */
     	case OP_FILL:
@@ -914,10 +953,10 @@ generate_instruction (operands_t operands, const char* opstr)
 		val &= 0xFFFF;
 	    } else /* O_L */
 		val = find_label (o1, 16);
-	    write_value (val);
+	    write_value (val,0);
     	    break;
 	case OP_RET:   
-	    write_value (0xC1C0); 
+	    write_value (0xC1C0,1); 
 	    break;
 	case OP_STRINGZ:
 	    /* We must count locations written in pass 1;
@@ -925,18 +964,18 @@ generate_instruction (operands_t operands, const char* opstr)
 	    for (str = o1 + 1; str[0] != '\"'; str++) {
 		if (str[0] == '\\') {
 		    switch (str[1]) {
-			case 'a': write_value ('\a'); str++; break;
-			case 'b': write_value ('\b'); str++; break;
-			case 'e': write_value ('\e'); str++; break;
-			case 'f': write_value ('\f'); str++; break;
-			case 'n': write_value ('\n'); str++; break;
-			case 'r': write_value ('\r'); str++; break;
-			case 't': write_value ('\t'); str++; break;
-			case 'v': write_value ('\v'); str++; break;
-			case '\\': write_value ('\\'); str++; break;
-			case '\"': write_value ('\"'); str++; break;
+			case 'a': write_value ('\a', 0); str++; break;
+			case 'b': write_value ('\b', 0); str++; break;
+			case 'e': write_value ('\e', 0); str++; break;
+			case 'f': write_value ('\f', 0); str++; break;
+			case 'n': write_value ('\n', 0); str++; break;
+			case 'r': write_value ('\r', 0); str++; break;
+			case 't': write_value ('\t', 0); str++; break;
+			case 'v': write_value ('\v', 0); str++; break;
+			case '\\': write_value ('\\', 0); str++; break;
+			case '\"': write_value ('\"', 0); str++; break;
 			/* FIXME: support others too? */
-			default: write_value (str[1]); str++; break;
+			default: write_value (str[1],0); str++; break;
 		    }
 		} else {
                     if (str[0] == '\r') {
@@ -945,16 +984,16 @@ generate_instruction (operands_t operands, const char* opstr)
                         line_num++;
                     } else if (str[0] == '\n')
 		        line_num++;
-		    write_value (*str);
+		    write_value (*str, 0);
 		}
 	    }
-	    write_value (0);
+	    write_value (0, 0);
 	    break;
 	case OP_BLKW:
 	    (void)read_val (o1, &val, 16);
 	    val &= 0xFFFF;
 	    while (val-- > 0)
-	        write_value (0x0000);
+	        write_value (0x0000, 0);
 	    break;
 	
 	/* Handled earlier or never used, so never seen here. */
@@ -970,37 +1009,37 @@ generate_instruction (operands_t operands, const char* opstr)
 	case OP_SLL:
 	    if (operands == O_RRI) {
 	        (void)read_unsigned_val (o3, &val, 4);
-		write_value (0x1010 | (r1 << 9) | (r2 << 6) | (val & 0xF));
+		write_value (0x1010 | (r1 << 9) | (r2 << 6) | (val & 0xF), 1);
 	    } else
-		write_value (0xD000 | (r1 << 9) | (r2 << 6) | r3);
+		write_value (0xD000 | (r1 << 9) | (r2 << 6) | r3, 1);
 	    break;
 
 	/* Shift Right Arithmetic */
 	case OP_SRA:
 	    if (operands == O_RRI) {
 	        (void)read_unsigned_val (o3, &val, 4);
-		write_value (0x5010 | (r1 << 9) | (r2 << 6) | (val & 0xF));
+		write_value (0x5010 | (r1 << 9) | (r2 << 6) | (val & 0xF), 1);
 	    } else
-		write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_SRA-OP_SLL) << 3) | r3);
+		write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_SRA-OP_SLL) << 3) | r3, 1);
 	    break;
 
 	/* Divide */
 	case OP_DIV:
-	    write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_DIV-OP_SLL) << 3) | r3);
+	    write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_DIV-OP_SLL) << 3) | r3, 1);
 	    break;
 
 	/* Remainder */
 	case OP_MOD:
-	    write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_MOD-OP_SLL) << 3) | r3);
+	    write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_MOD-OP_SLL) << 3) | r3, 1);
 	    break;
 
 	/* Multiply */
 	case OP_MUL:
-	    write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_MUL-OP_SLL) << 3) | r3);
+	    write_value (0xD000 | (r1 << 9) | (r2 << 6) | ((OP_MUL-OP_SLL) << 3) | r3, 1);
 	    break;
 
 	/* pseudo-ops */
-	case OP_NOP:  write_value (0x0000); break;
+	case OP_NOP:  write_value (0x0000, 1); break;
 
         /* directives */
         case OP_BLKWTO:
@@ -1011,7 +1050,7 @@ generate_instruction (operands_t operands, const char* opstr)
                 num_errors++;
             } else {
 	        while (code_loc < val) {
-                    write_value (0x0000);
+                    write_value (0x0000, 0);
                 }
             }
 	    break;
@@ -1053,8 +1092,10 @@ found_label (const char* lname)
 	    fprintf (stderr, "%3d: label %s has already appeared\n", 
 	    	     line_num, local);
 	    num_errors++;
-	} else
+	} else {
 	    fprintf (symout, "//\t%-16s  %04X\n", local, code_loc);
+	    fprintf (dbgout, "!%04x:%s\n", code_loc, local);
+        }
     }
 
     free (local);
