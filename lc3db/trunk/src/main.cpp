@@ -135,7 +135,7 @@ int main(int argc, char **argv)
 	else {
 	  sprintf(sys_string, "/bin/rm -rf ~/.lc3db");
 	  printf("/bin/rm -rf %s\n", buffer);
-	  system(sys_string);
+	 system(sys_string);
 	}
 	exit(0);
 	break;
@@ -203,7 +203,7 @@ int main(int argc, char **argv)
     printf("%s\n%s\n%s\n", PROGRAM, COPYRIGHT, INFO);
   }
 
-  // Terminal creation disabled, because it is buildin ddd
+  // Terminal creation disabled, because it is build into ddd
   if (0){
     // Create a terminal
     FILE *tmpF = popen("3>&1 xterm -title 'LC3 terminal' -e sh -c 'tty 1>&3; sleep 100000'", "r");
@@ -223,7 +223,7 @@ int main(int argc, char **argv)
 	hw.set_tty(open(buf, O_RDWR));
       }
     } else {
-	printf("popen failed\n");      
+	fprintf(stderr, "popen failed\n");      
     }
   }
 
@@ -231,6 +231,11 @@ int main(int argc, char **argv)
   // Load user specified code
   if (optind < argc) {
     exec_file = argv[optind];
+    int l = strlen(exec_file);
+    if (l < 4 || strcasecmp(&exec_file[l-4], ".obj")) {
+   	fprintf(stderr, "object file expected (\"%s\" given)\n", exec_file);
+	exec_file = NULL;
+    }
   }
 
   return gdb_mode(cpu, src_info, mem, hw, gui_mode, quiet_mode, exec_file);

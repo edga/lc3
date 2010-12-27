@@ -220,6 +220,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
   break_on_return = false;
   while ((cmd = readline(quiet_mode ? "(gdb) " : "(gdb) "))) try {
     int instructions_to_run = 0;
+//    fprintf(stderr, "\nIR: %d\n", instructions_to_run);
 
     if (!*cmd) cmd = last_cmd.c_str();
 #if defined(USE_READLINE)
@@ -228,7 +229,10 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
     std::istringstream incmd(cmd);
     std::string cmdstr;
-    
+   
+    cmdstr.clear(); 
+    param1.clear();
+    param2.clear();
     incmd >> cmdstr;
 
     if (cmdstr == "run") {
@@ -249,6 +253,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
       // Load executable if specified
       if (exec_file) {
+	printf("Loading %s\n", exec_file);
       	uint16_t start_addr = load_prog(exec_file, src_info, mem);
 	if (0xFFFF == start_addr) {
 	  printf("failed to load %s\n", exec_file);
@@ -468,27 +473,30 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	       (int16_t)mem[off & 0xFFFF] & 0xFFFF);
       }
     } else if (cmdstr == "step" || cmdstr == "s") {
+    //fprintf(stderr, "\nIR: %d\n", instructions_to_run);
       //param1.clear();
       incmd >> param1;
-      if (!param1.empty()) try {
-	instructions_to_run = lexical_cast<uint16_t>(param1);
-      } catch(bad_lexical_cast &e) {
-	instructions_to_run = 1;
+      if (!param1.empty()) {
+       	try {
+	  instructions_to_run = lexical_cast<uint16_t>(param1);
+	} catch(bad_lexical_cast &e) {
+	  instructions_to_run = 1;
+	}
       } else {
 	instructions_to_run = 1;
       }
     } else if (cmdstr == "exit" || cmdstr == "quit" || cmdstr == "q") {
       break;
     } else if (cmdstr == "ignore") {
-      param1.clear();
-      param2.clear();
+      //param1.clear();
+      //param2.clear();
       incmd >> param1 >> param2;
       int id = lexical_cast<uint16_t>(param1);
       int count = lexical_cast<uint16_t>(param1);
       breakpoints.setIgnoreCount(id, count);
     } else if (cmdstr == "delete" || cmdstr == "disable") {
       bool del = (cmdstr=="delete");
-      param1.clear();
+      //param1.clear();
       incmd >> param1;
       if (param1 == "breakpoints") {
 	param1.clear();
@@ -510,7 +518,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       }
     } else if (cmdstr == "enable") {
       BreakpointDisposition disp = Keep;
-      param1.clear();
+      //param1.clear();
       incmd >> param1;
       if (param1 == "breakpoints") {
 	param1.clear();
@@ -546,6 +554,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
     if (instructions_to_run) {
       while (instructions_to_run) {
+	//fprintf(stderr, "\nIR: %d \tPC: %04x\n", instructions_to_run, cpu.PC & (0xFFFF));
 	instructions_to_run--;
 
 	// Check stoping conditions
