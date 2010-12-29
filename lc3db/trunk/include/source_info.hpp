@@ -30,32 +30,39 @@ struct SourceLocation
 {
   const char * fileName;
   int lineNo;
+  bool isHLLSource;
+  uint16_t firstAddr, lastAddr;
 
-  SourceLocation(const char *_fileName, const int _lineNo) :
-    fileName(_fileName),lineNo(_lineNo) {}
+  SourceLocation(const char *_fileName, int _lineNo, bool _isHLLSource, uint16_t _firstAddr, uint16_t _lastAddr) :
+    fileName(_fileName),lineNo(_lineNo),
+    isHLLSource(_isHLLSource), firstAddr(_firstAddr), lastAddr(_lastAddr) {}
 };	
 
 // Internal source location representation
 struct _SourceLocation;
+struct _HLLSourceLocation;
+struct _MachineSourceLocation;
 
 class SourceInfo {
 public:
   SourceInfo();
   ~SourceInfo();
 
-  int add_source_file(std::string filePath); 
-  void add_source_line(uint16_t address, int fileId, int lineNo); 
+  int add_source_file(int fileId, std::string filePath);
+  void add_source_line(uint16_t firstAddress, uint16_t lastAddress, int fileId, int lineNo);
   SourceLocation find_source_location_short(uint16_t address); 
   SourceLocation find_source_location_absolute(uint16_t address); 
-  uint16_t find_address(std::string fileName, int lineNo); 
+  uint16_t find_line_start_address(std::string fileName, int lineNo); 
   std::map<std::string, uint16_t> symbol;
 
 private:
   _SourceLocation find_source_location(uint16_t address); 
-  std::map<uint16_t, _SourceLocation> sources; // lc3 address => source file location
-  std::vector<std::string> fileNames;	// fileID => short file name
-  std::vector<std::string> filePaths;	// fileID => full path
-  std::vector<std::vector<uint16_t> > addresses; // source file location => lc3 address (addresses[fileId][lineNo])
+  std::map<uint16_t, _MachineSourceLocation> machineSources; // lc3 address => source file location
+  std::map<uint16_t, _HLLSourceLocation> HLLSources;         // lc3 address => source file location
+  std::map<uint16_t, uint16_t> internalIds;    // userFileId => internalFileId
+  std::vector<std::string> fileNames;	// internalFileID => short file name
+  std::vector<std::string> filePaths;	// internalFileID => full path
+  std::vector<std::vector<uint16_t> > startAddresses; // source file location => lc3 address (addresses[fileId][lineNo])
 };
 
 #endif

@@ -143,8 +143,9 @@ OP(JSR,   (0,1,0,0,1,F,F,F,F,F,F,F,F,F,F,F))
 
 OP(JSRR,  (0,1,0,0,0,0,0,E,E,E,0,0,0,0,0,0))
 {
-  R[7] = PC;
+  int16_t tmp = PC;
   PC = BaseR;
+  R[7] = tmp;
 }
 
 OP(LD,    (0,0,1,0,A,A,A,F,F,F,F,F,F,F,F,F))

@@ -227,6 +227,14 @@ enum pre_parse_t {
     PP_L2 = 16
 };
 
+typedef enum debug_stab_t debug_stab_t;
+enum debug_stab_t {
+    D_FILE,
+    D_LINE,
+    D_LINE_END
+};
+
+
 static const pre_parse_t pre_parse[NUM_OPERANDS] = {
     (PP_R1 | PP_R2 | PP_R3), /* O_RRR */
     (PP_R1 | PP_R2),         /* O_RRI */
@@ -260,6 +268,20 @@ static FILE* binout;
 static FILE* vcout;
 static int vcout_line_addr;
 
+/* debug support */
+enum dbg_line_state {
+    DBG_LINE_NONE = 0,
+    DBG_LINE_PARSED,
+    DBG_LINE_STARTED,
+    DBG_LINE_FINISHED
+};
+typedef enum dbg_line_state dbg_line_state_t;
+
+static dbg_line_state_t dbg_line_state;
+static char dbg_line_info[256];
+static int dbg_line_start_addr;
+static void handle_debug (debug_stab_t stype, char* opstr);
+
 static void new_inst_line ();
 static void bad_operands ();
 static void unterminated_string ();
@@ -279,10 +301,6 @@ REGISTER [rR][0-7]
 HEX      [xX][-]?[0-9a-fA-F]+
 DECIMAL  [#]?[-]?[0-9]+
 IMMED    {HEX}|{DECIMAL}
-/*
- * Made same as windows assembler/
-LABEL    [A-Za-z][A-Za-z_0-9]*
- */
 LABEL    [_A-Za-z][A-Za-z_0-9]*
 STRING   \"([^\"]*|(\\\"))*\"
 UTSTRING \"[^\n\r]*
@@ -312,6 +330,8 @@ O_     {ENDLINE}
 /* exclusive lexing states to read operands, eat garbage lines, and
    check for extra text after .END directive */
 %x ls_operands ls_garbage ls_finished
+/* lexing states for debug info */
+%x ls_debug_file ls_debug_line ls_debug_lineend
 
 %%
 
@@ -364,8 +384,18 @@ NOP       {inst.op = OP_NOP;   BEGIN (ls_operands);}
 
     /* directives */
 \.BLKWTO  {inst.op = OP_BLKWTO; BEGIN (ls_operands);}
+
  /*						*/
  /***********************************************/
+
+    /* debug support */
+\.DEBUG{SPACE}+FILE{SPACE}+ { BEGIN (ls_debug_file);}
+\.DEBUG{SPACE}+LINE{SPACE}+ { BEGIN (ls_debug_line);}
+\.DEBUG{SPACE}+LINEEND{SPACE}+ { BEGIN (ls_debug_lineend);}
+
+<ls_debug_file>{DECIMAL}:[^\n\r]+{ENDLINE}   { handle_debug (D_FILE, yytext); new_inst_line(); BEGIN (0);}
+<ls_debug_line>{DECIMAL}:{DECIMAL}{ENDLINE}  { handle_debug (D_LINE, yytext); new_inst_line(); BEGIN (0);}
+<ls_debug_lineend>{DECIMAL}:{DECIMAL}{ENDLINE}  { handle_debug (D_LINE_END, yytext); new_inst_line(); BEGIN (0);}
 
     /* rules for operand formats */
 <ls_operands>{O_RRR} {generate_instruction (O_RRR, yytext); BEGIN (0);}
@@ -463,7 +493,7 @@ main (int argc, char** argv)
     } else {
 	char buf[512];
         char *cwd = getcwd(buf, sizeof(buf));
-        fprintf(dbgout, "%s/%s\n", cwd, argv[1]);
+        fprintf(dbgout, "#0:%s/%s\n", cwd, argv[1]);
     }
     strcpy (ext, ".sym");
     if ((symout = fopen (fname, "w")) == NULL) {
@@ -517,6 +547,7 @@ main (int argc, char** argv)
 
     puts ("STARTING PASS 2");
     pass = 2;
+    dbg_line_state = DBG_LINE_NONE;
     line_num = 0;
     num_errors = 0;
     saw_orig = 0;
@@ -532,6 +563,10 @@ main (int argc, char** argv)
     fclose (symout);
     fclose (objout);
     fclose (binout);
+    /* dbgout: finish pending line */
+    if (dbg_line_state==DBG_LINE_STARTED) {
+        fprintf (dbgout, "@%s:%.4x:%.4x\n", dbg_line_info, dbg_line_start_addr, code_loc-1);
+    }
     fclose (dbgout);
     /* VHDL constants file */
     if (vcout_line_addr <= code_loc) {
@@ -695,6 +730,10 @@ write_value (int val, int dbg)
     int this_loc = code_loc;
 
     code_loc = (code_loc + 1) & 0xFFFF;
+    if (code_loc == 0) {
+	fprintf(stderr, "ERROR: More code than available address space. Line %d\n", line_num);
+	exit(1);
+    }	
     if (pass == 1)
         return;
         
@@ -715,11 +754,17 @@ write_value (int val, int dbg)
         /*
          * dbgout 
          */
+	/* assembly line numbers */
         if (dbg && old_line != line_num && old_loc != code_loc) {
-            fprintf (dbgout, "@%d:%.4x\n", line_num, code_loc - 1);
+            fprintf (dbgout, "@0:%d:%.4x:%.4x\n", line_num, code_loc-1, code_loc-1);
             old_line = line_num;
             old_loc = code_loc;
         }
+	/* C line numbers (output after to override assembly line numbers) */
+	if (dbg && dbg_line_state==DBG_LINE_PARSED) {
+            dbg_line_start_addr = code_loc-1;
+	    dbg_line_state = DBG_LINE_STARTED;
+	}
 
     	/*
          * VHDL constants file
@@ -793,6 +838,45 @@ bad_label:
     num_errors++;
     free (local);
     return 0;
+}
+
+static void
+handle_debug (debug_stab_t stype, char* opstr)
+{
+    char* tail;
+
+    if (pass == 1)
+        return;
+
+    tail = opstr + strlen(opstr)-1;
+    while (*tail == '\r' || *tail == '\n') {
+	*(tail--) = 0;
+    }
+
+    switch(stype) {
+        case D_FILE:
+	    fprintf (dbgout, "#%s\n", yytext);
+	    break;
+
+        case D_LINE:
+            if (dbg_line_state==DBG_LINE_STARTED) {
+                /* finish previous line */
+                fprintf (dbgout, "@%s:%.4x:%.4x\n", dbg_line_info, dbg_line_start_addr, code_loc-1);
+            }
+            dbg_line_state = DBG_LINE_PARSED;
+	    dbg_line_info[sizeof(dbg_line_info)-1] = 0;
+	    strncpy(dbg_line_info, yytext, sizeof(dbg_line_info)-1);
+	    break;
+
+        case D_LINE_END:
+            if (dbg_line_state==DBG_LINE_STARTED) {
+                /* finish previous line */
+                fprintf (dbgout, "@%s:%.4x:%.4x\n", dbg_line_info, dbg_line_start_addr, code_loc-1);
+            }
+            dbg_line_state = DBG_LINE_NONE;
+	    break;
+    }
+
 }
 
 static void 

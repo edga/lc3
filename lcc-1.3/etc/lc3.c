@@ -18,7 +18,7 @@ static char rcsid[] = "$Id: lc3.c,v 1.1.1.1 2004/03/24 04:37:35 sjp Exp $";
 #endif
 
 /* char *suffixes[] = { ".c", ".i", ".s", ".o", ".out", 0 }; */
-char *suffixes[] = { ".c", ".i", ".lcc", ".asm", ".obj", ".out", 0 }; 
+char *suffixes[] = { ".c", ".i", ".lcc", ".asm", ".obj", ".out", 0 };
 char inputs[256] = "";
 char *cpp[] = { LCCDIR "cpp",
 	"-U__GNUC__", "-D__STDC__=1", "-D__STRICT_ANSI__", "-D__signed__=signed",
@@ -37,8 +37,10 @@ int option(char *arg) {
 		com[0] = concat(&arg[8], PATHSEP "install" PATHSEP "rcc");
 		ld[0]  = concat(&arg[8], PATHSEP "install" PATHSEP "lc3lib");
 		ld[1]  = concat(&arg[8], PATHSEP "lc3lib");
-	} else if (strncmp(arg, "-ld=", 4) == 0)
+	} else if (strncmp(arg, "-ld=", 4) == 0) {
 		ld[0] = &arg[4];
+	} else if (strncmp(arg, "-g", 2) == 0)
+		return 1;
 	else return 0;
 	return 1;
 }

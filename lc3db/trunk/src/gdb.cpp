@@ -112,40 +112,77 @@ extern "C" {
   int lc3_asm(int, const char **);
 }
 
-uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem)
+uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t *pEntry)
 {
+  char buf[4096];
+  int debugLine;
+  int linenum;
+  int fileId = -1;
+  int addr, lastAddr;
+  int c;
+  FILE *f;
+  uint16_t ret;
+  char *entryLabel = NULL;
   std::string object = file;
   std::string base = object.substr(0, object.rfind(".obj"));
   std::string debug = base + ".dbg";
-  uint16_t ret = mem.load(object);
-  FILE *f = (ret != 0xFFFF) ? fopen(debug.c_str(), "r") : 0;
-  char source[4096];
-  int linenum;
-  int addr;
+ 
+  ret  = mem.load(object);
+  if (ret == 0xFFFF) return ret;
 
+  f = fopen(debug.c_str(), "r");
   if (!f) return ret;
 
-  fgets(source, sizeof(source), f);
-  source[strlen(source) - 1] = 0;
-  int fileId = src_info.add_source_file(std::string(source));
+  if (1 == fscanf(f, "ENTRY:%s\n", buf)) {
+    entryLabel = strdup(buf);
+  } else {
+    fprintf(stderr, "ENTRY label missing (will break on first word)\n");
+  }
 
+  debugLine = 0;
   while (!feof(f)) {
-    if (fgetc(f) != '!') {
-      if (2 == fscanf(f, "%d:%x\n", &linenum, &addr)) {
-	// char buf[10];
-	// sprintf(buf, "%d", linenum);
-	// std::string str = source;
-	// str += ":";
-	// str += buf;
-	// str += ":0";
-	// mem.debug[addr & 0xFFFF] = str;
-	src_info.add_source_line(addr & 0xFFFF, fileId, linenum);
+    debugLine++;
+    c = fgetc(f);
+
+    switch(c) {
+    case '#':
+      if (1 == fscanf(f, "%d:", &fileId)) {
+        fgets(buf, sizeof(buf), f);
+        buf[strlen(buf) - 1] = 0;
+        src_info.add_source_file(fileId, std::string(buf));
+      } else {
+        fprintf(stderr, "Wrong line format in debug information file: %s (line: %d)\n", debug.c_str(), debugLine);
       }
+      break;
+
+    case '!':
+      if (2 == fscanf(f, "%x:%s\n", &addr, buf)) {
+        src_info.symbol[buf] = addr;
+      } else {
+        fprintf(stderr, "Wrong line format in debug information file: %s (line: %d)\n", debug.c_str(), debugLine);
+      }
+      break;
+
+    case '@':
+      if (4 == fscanf(f, "%d:%d:%x:%x\n", &fileId, &linenum, &addr, &lastAddr)) {
+	src_info.add_source_line(addr & 0xFFFF, lastAddr & 0xFFFF, fileId, linenum);
+      } else {
+        fprintf(stderr, "Wrong line format in debug information file: %s (line: %d)\n", debug.c_str(), debugLine);
+      }
+      break;
+
+    default:
+        fprintf(stderr, "Unrecognised line type in debug information file: %s (line: %d)\n", debug.c_str(), debugLine);
+        /* read reminder of the line */
+        fgets(buf, sizeof(buf), f);
+    }
+  }
+
+  if (pEntry) {
+    if (entryLabel && src_info.symbol.count(entryLabel)) {
+      *pEntry = src_info.symbol[entryLabel];
     } else {
-      char label[4096];
-      if (2 == fscanf(f, "%x:%s\n", &addr, label)) {
-	src_info.symbol[label] = addr;
-      }
+      *pEntry = ret;
     }
   }
 
@@ -165,9 +202,15 @@ void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, b
 {
   if (gui_mode) {
     SourceLocation sl = src_info.find_source_location_absolute(cpu.PC);
-    printf(MARKER "%s:%d:0:beg:0x%.4x\n", 
-	   //mem.debug[cpu.PC].c_str(), cpu.PC & 0xFFFF);
-	   sl.fileName, sl.lineNo, cpu.PC & 0xFFFF);
+    if (sl.lineNo > 0) {
+      printf(MARKER "%s:%d:0:%s:0x%.4x\n",
+          //mem.debug[cpu.PC].c_str(), cpu.PC & 0xFFFF);
+          sl.fileName, sl.lineNo,
+          (sl.isHLLSource && cpu.PC > sl.firstAddr) ? "middle" : "beg",
+              cpu.PC & 0xFFFF);
+    } else {
+      printf("%.4x in <unknown>\n", cpu.PC & 0xFFFF);
+    }
   } else if (!quiet_mode) {
     printf("0x%.4x: %.4x: ", cpu.PC & 0xFFFF, mem[cpu.PC] & 0xFFFF);
     cpu.decode(mem[cpu.PC]);
@@ -213,6 +256,10 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
   bool break_on_return;
   bool breakpoint_hit = false;	// Flag set once breakpoint is detected, so that breakpointed instruction can be enabled.
   int temporary_breakpoint = -1;
+  int repeat_count = 0;
+  const int INT_INFINITY = 0x7FFFFFFF;
+  int saved_execution_range_start = 0;
+  int saved_execution_range_end = INT_INFINITY;
 
   show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
 
@@ -220,7 +267,10 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
   break_on_return = false;
   while ((cmd = readline(quiet_mode ? "(gdb) " : "(gdb) "))) try {
     int instructions_to_run = 0;
-//    fprintf(stderr, "\nIR: %d\n", instructions_to_run);
+    int limit_execution_range_start = 0;
+    int limit_execution_range_end = INT_INFINITY;
+    int step_over_calls = 0;
+    int in_step_over_mode = 0;
 
     if (!*cmd) cmd = last_cmd.c_str();
 #if defined(USE_READLINE)
@@ -241,11 +291,11 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	hw.set_tty(open(param2.c_str(), O_RDWR));
       }
 
-      uint16_t pc = load_prog("lib/los.obj", src_info, mem);
+      uint16_t pc = load_prog("lib/los.obj", src_info, mem, NULL);
       if (pc == 0xFFFF) {
 	sprintf(sys_string, "%s/lib/lc3db/los.obj", path_ptr);
 	printf("Loading %s\n", sys_string);
-	pc = load_prog(sys_string, src_info, mem);
+	pc = load_prog(sys_string, src_info, mem, NULL);
       }
       else {
 	printf("Loading lib/los.obj\n");
@@ -253,27 +303,29 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
       // Load executable if specified
       if (exec_file) {
+	uint16_t entry;
 	printf("Loading %s\n", exec_file);
-      	uint16_t start_addr = load_prog(exec_file, src_info, mem);
+      	uint16_t start_addr = load_prog(exec_file, src_info, mem, &entry);
 	if (0xFFFF == start_addr) {
 	  printf("failed to load %s\n", exec_file);
 	} else {
 	  mem[0x01FE] = start_addr;
-	  temporary_breakpoint = start_addr;
+	  int bt_id = breakpoints.add(entry, false);
+	  //temporary_breakpoint = start_addr;
 	}
       }
 
       if (pc != 0xFFFF) {
 	cpu.PC = mem[0x01FF];
 	cpu.PSR = 0x0000;
-	instructions_to_run = 0x7FFFFFFF;
+	instructions_to_run = INT_INFINITY;
 	mem[0xFFFE] = mem[0xFFFE] | 0x8000;
       } else {
 	printf("Could not find los.obj\n");
       }
     } else if (cmdstr == "finish") {
       break_on_return = true;
-      instructions_to_run = 0x7FFFFFFF;
+      instructions_to_run = INT_INFINITY;
     } else if (cmdstr == "force" || cmdstr == "f") {
       incmd >> param1 >> param2;
       off = lexical_cast<uint16_t>(param2);
@@ -289,6 +341,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	mem[off2] = off;
       }
     } else if (cmdstr == "set") {
+      fprintf(stderr, "\"set\" command is not supported yet (try using \"force\")\n");
     } else if (cmdstr == "dump" || cmdstr == "d"  || cmdstr == "x") {
       if (cmdstr == "x") {
 	incmd >> param2 >> param1;
@@ -351,7 +404,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       hw.set_tty(open(param1.c_str(), O_RDWR));
     } else if (cmdstr == "continue" || cmdstr == "c" || cmdstr=="cont") {
       printf("running\n");
-      instructions_to_run = 0x7FFFFFFF;
+      instructions_to_run = INT_INFINITY;
     } else if (cmdstr == "disassemble" || cmdstr == "dasm") {
       incmd >> param1 >> param2;
       uint16_t start = lexical_cast<uint16_t>(param1);
@@ -372,29 +425,61 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       printf("%s", HELP);
     } else if (cmdstr == "load" || cmdstr == "l" || cmdstr == "file") {
       incmd >> param1;
-      uint16_t pc = load_prog(param1.c_str(), src_info, mem);
+      uint16_t entry;
+      uint16_t pc = load_prog(param1.c_str(), src_info, mem, &entry);
       if (pc != 0xFFFF) {
 	cpu.PC = pc;
 	//const char *file = "";
 	//if (!mem.debug[cpu.PC].empty()) {
 	//  file = mem.debug[cpu.PC].c_str();
 	//}
+	int bt_id = breakpoints.add(entry, false);
 	show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
 	mem[0xFFFE] = mem[0xFFFE] | 0x8000;
       } else {
 	printf("Could not open %s\n", param1.c_str());
       }
-    } else if (cmdstr == "next" || cmdstr == "n") {
-      uint16_t IR = mem[cpu.PC];
-
-      switch (IR & 0xF000) {
-      case 0xF000: // TRAP
-      case 0x4000: // JSR
-	temporary_breakpoint = cpu.PC + 1;
-	instructions_to_run = 0x7FFFFFFF;
-	break;
-      default:
+    } else if (cmdstr == "stepi" || cmdstr == "si") {
+      incmd >> param1;
+      try {
+	instructions_to_run = lexical_cast<uint16_t>(param1);
+      } catch(bad_lexical_cast &e) {
 	instructions_to_run = 1;
+      }
+    } else if (cmdstr == "nexti" || cmdstr == "ni") {
+  l_handle_nexti:
+      instructions_to_run = 1;
+      step_over_calls = 1;
+    } else if (cmdstr == "step" || cmdstr == "s") {
+      incmd >> param1;
+      int repeat;
+      try {
+	repeat = lexical_cast<uint16_t>(param1);
+      } catch(bad_lexical_cast &e) {
+	repeat = 1;
+      }
+      SourceLocation line = src_info.find_source_location_absolute(cpu.PC);
+      if (line.lineNo <= 0 || !line.isHLLSource) {
+	// No hi level line at current location
+	instructions_to_run = repeat;
+      } else {
+	if (repeat != 1) {
+	  fprintf(stderr, "step argument is currently not supported\n");
+	}
+	limit_execution_range_start = line.firstAddr;
+	limit_execution_range_end = line.lastAddr;
+	instructions_to_run = INT_INFINITY;
+      }
+    } else if (cmdstr == "next" || cmdstr == "n") {
+      SourceLocation line = src_info.find_source_location_absolute(cpu.PC);
+      if (line.lineNo <= 0 || !line.isHLLSource) {
+	// No hi level line at current location
+	goto l_handle_nexti;
+      } else {
+	instructions_to_run = INT_INFINITY;
+	step_over_calls = 1;
+	limit_execution_range_start = line.firstAddr;
+	limit_execution_range_end = line.lastAddr;
       }
     } else if (cmdstr == "ignore") {
       incmd >> param1 >> param2;
@@ -424,7 +509,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	try {
 	  uint16_t lineNo;
 	  lineNo = lexical_cast<uint16_t>(param1.substr(colPos+1));
-	  bp_addr = src_info.find_address(fileName, lineNo);
+	  bp_addr = src_info.find_line_start_address(fileName, lineNo);
 	  bp_valid = bp_addr != 0;
 	} catch(bad_lexical_cast &e) {
 	  bp_valid = false;
@@ -471,19 +556,6 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	printf("0x%.4x: %.4x (%d)\n", off & 0xFFFF,
 	       (int16_t)mem[off & 0xFFFF] & 0xFFFF,
 	       (int16_t)mem[off & 0xFFFF] & 0xFFFF);
-      }
-    } else if (cmdstr == "step" || cmdstr == "s") {
-    //fprintf(stderr, "\nIR: %d\n", instructions_to_run);
-      //param1.clear();
-      incmd >> param1;
-      if (!param1.empty()) {
-       	try {
-	  instructions_to_run = lexical_cast<uint16_t>(param1);
-	} catch(bad_lexical_cast &e) {
-	  instructions_to_run = 1;
-	}
-      } else {
-	instructions_to_run = 1;
       }
     } else if (cmdstr == "exit" || cmdstr == "quit" || cmdstr == "q") {
       break;
@@ -550,6 +622,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       }
     } else {
       printf("Bad command `%s'\nTry using the `help' command.\n", cmd);
+      continue;
     }
 
     if (instructions_to_run) {
@@ -573,14 +646,43 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	    break;
 	  }
 	}
-	if (temporary_breakpoint == cpu.PC || signal_received) {
+	if (signal_received) {
 	  signal_received = 0;
-	  temporary_breakpoint = -1;
 	  break;
+	}
+	if (temporary_breakpoint == cpu.PC) {
+	  temporary_breakpoint = -1;
+	  if (!in_step_over_mode) {
+	    break;
+	  } else {
+	    limit_execution_range_start = saved_execution_range_start;
+	    limit_execution_range_end = saved_execution_range_end;
+	    // Reset for next command
+	    step_over_calls = 1;
+	  }
 	}
 	if (!breakpoint_hit && breakpoints.check(cpu.PC)) {
 	  breakpoint_hit = true;
 	  break;
+	}
+
+	// next/nexti workaround
+	if (step_over_calls) {
+	  uint16_t IR_opcode = mem[cpu.PC] & 0xF000;
+	  if (IR_opcode == 0xF000 || // TRAP
+	      IR_opcode == 0x4000) { // JSR
+	    // Next instruction is a call
+	    in_step_over_mode = 1;
+	    step_over_calls = 0;
+
+	    temporary_breakpoint = cpu.PC + 1;
+
+	    instructions_to_run = INT_INFINITY;
+	    saved_execution_range_start = limit_execution_range_start;
+	    saved_execution_range_end = limit_execution_range_end;
+	    limit_execution_range_start = 0;
+	    limit_execution_range_end = INT_INFINITY;
+	  }
 	}
 
 	// Execute
@@ -588,12 +690,19 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	mem.cycle();
 	instruction_count++;
 	breakpoint_hit = false;
+
+	if (cpu.PC < limit_execution_range_start ||
+	    cpu.PC > limit_execution_range_end) {
+	  break;
+	}
+
       }
 
       show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
     }
 
     last_cmd = cmd;
+    repeat_count = 0;
   } catch (bad_lexical_cast &e) {
       printf("Bad command `%s'\nTry using the `help' command.\n", cmd);
   }

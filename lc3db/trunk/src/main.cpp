@@ -41,7 +41,7 @@ extern "C" {
 char* path_ptr;
 int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	     bool gui_mode, bool quiet_mode, const char *exec_file);
-uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem);
+uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t *entry);
 
 const char * PROGRAM = "LC-3 Simulator 1.0";
 const char * COPYRIGHT =
@@ -187,10 +187,10 @@ int main(int argc, char **argv)
     }
   }
 
-  if (0xFFFF == load_prog("lib/los.obj", src_info, mem)) {
+  if (0xFFFF == load_prog("lib/los.obj", src_info, mem, NULL)) {
     sprintf(sys_string, "%s/lib/lc3db/los.obj", path_ptr);
     printf("Loading %s\n", sys_string);
-    load_prog(sys_string, src_info, mem);
+    load_prog(sys_string, src_info, mem, NULL);
   }
   else {
     printf("Loading lib/los.obj\n");
