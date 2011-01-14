@@ -104,7 +104,7 @@ The compilation procedure for lc3 target can be seen when lcc is invoked with "-
 
  	*lc3 assembler* (lc3as: lc3tools/lc3.f) generates "*.obj", "*.sym" and the rest.
 
-LCC framework is well designed, so one should need only to modify backend (lc3dtu.md) and lc3 postprocessor (lc3pp.c).
+LCC framework is well designed, so one should need only to modify backend (lc3.md or lc3dtu.md) and lc3 postprocessor (lc3pp.c).
 The LCC is documented in the book, but some local modifications are possible without knowing all the details.
 
 <TODO: add links to backend interface v.4 documentation and links to relevant chapters of the book>
