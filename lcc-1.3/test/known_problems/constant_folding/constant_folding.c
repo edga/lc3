@@ -27,6 +27,10 @@
  *	Because sizeof(int) == sizeof(char), we can't infer type from ty->size.
  *	The ranges should be calculated according the ty matching Type variables
  *	like: unsignedtype, unsignedlong, ...  (from src/types.c)
+ *	There are probably more related problems waiting to emerge
+ *	  "grep '[.>]size\>'  *.c *.h" returns quite some number of uses of
+ *	ty->size. Maybe it might be good idea to introduce new field in Type
+ *	struct to distinguish betwean sizeof() size and valid range.
  */
 
 #include <stdio.h>
