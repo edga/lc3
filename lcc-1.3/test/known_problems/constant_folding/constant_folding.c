@@ -8,21 +8,25 @@
  *	at 8*sizeof, to preserve semantics.
  *	  2. Bitwise complement (BCOM) also fails the same way with signed constants.
  *	From the source it seams that bitwise and (BAND) might also be affected.
- * Source:
- *	simplify() in src/simp.c:
-		  see:  l->u.v.i & ones(8*ty->size)
-		  in:
-		case CVI+U:
-		case CVU+U:
-		case BAND+U:
-		case BAND+I:
-		case BCOM+U:
-		case BCOM+I:
  * Workaround:
  *	1. Don't use constant expressions. Assign constant and compute
  *	   expression in separate statements.
  *	2. Don't use unsigned constants. Express the same value as signed
  *	   (possibly negative) number. (Won't help with BCOM, BAND)
+ * Source:
+ *	simplify() in src/simp.c:
+ *		  see:  l->u.v.i & ones(8*ty->size)
+ *		  in:
+ *		case CVI+U:
+ *		case CVU+U:
+ *		case BAND+U:
+ *		case BAND+I:
+ *		case BCOM+U:
+ *		case BCOM+I:
+ * Solution idea:
+ *	Because sizeof(int) == sizeof(char), we can't infer type from ty->size.
+ *	The ranges should be calculated according the ty matching Type variables
+ *	like: unsignedtype, unsignedlong, ...  (from src/types.c)
  */
 
 #include <stdio.h>
