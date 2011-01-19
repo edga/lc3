@@ -447,7 +447,7 @@ static void lc3_store_far_on_stack(int srcReg, int bigOffset) {
 		print("BR #1\n"
 			".FILL #%d\n"
 			"LD R4, #-2\n"
-			"ADD R4, R5, R4\n", i+offset);
+			"ADD R4, R5, R4\n", i);
 		offset = 0; // Full address in R4
 	} else if (i>0) { /* Is it cheaper to calculate offset */
 		/* Calculate how much can we use as an offset in STR instruction */
@@ -559,11 +559,8 @@ static void progbeg(int argc, char *argv[]) {
     strcpy(filename, firstfile);
     i = 0;
     while(filename[i]!='.' && filename[i]!='\0') {
-        if(filename[i]==':' ||
-           filename[i]==' ' ||
-           filename[i]=='\\' ||
-           filename[i]=='/')
-				filename[i] = '_';
+        if(!isalnum(filename[i]))
+		filename[i] = '_';
         i++;
     }
     filename[i] = '\0';

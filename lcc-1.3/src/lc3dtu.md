@@ -151,6 +151,8 @@ static int pic;
 
 static int cseg;
 
+static int stabFileId = 0;
+
 /*
 typedef struct {
 	char name[30];
@@ -455,7 +457,7 @@ static void lc3_store_far_on_stack(int srcReg, int bigOffset) {
 		print("BR #1\n"
 			".FILL #%d\n"
 			"LD R4, #-2\n"
-			"ADD R4, R5, R4\n", i+offset);
+			"ADD R4, R5, R4\n", i);
 		offset = 0; // Full address in R4
 	} else if (i>0) { /* Is it cheaper to calculate offset */
 		/* Calculate how much can we use as an offset in STR instruction */
@@ -567,11 +569,8 @@ static void progbeg(int argc, char *argv[]) {
     strcpy(filename, firstfile);
     i = 0;
     while(filename[i]!='.' && filename[i]!='\0') {
-        if(filename[i]==':' ||
-           filename[i]==' ' ||
-           filename[i]=='\\' ||
-           filename[i]=='/')
-				filename[i] = '_';
+        if(!isalnum(filename[i]))
+		filename[i] = '_';
         i++;
     }
     filename[i] = '\0';
@@ -1355,12 +1354,20 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
 	emitcode();
 
+	if (glevel) {
+		print(".debug line %d:%d\n", stabFileId, lineno);
+	}
+
 	lc3_store(7,5,3); 	//store ret val on stack	
 	lc3_addimm(6,5,1); //pop locals off stack
 
 	lc3_pop(5); 	//restoring base ptr
 	lc3_pop(7); 	//loading ret addr into r7
-	print("RET\n\n");
+	print("RET\n");
+	if (glevel) {
+		print(".debug lineEnd %d:%d\n", stabFileId, lineno);
+	}
+	print("\n");
 }
 /************************************************************
   defconst
@@ -1570,18 +1577,20 @@ static char *currentfile;
 /* stabinit - initialize stab output */
 static void stabinit(char *file, int argc, char *argv[]) {
 	if (file) {
-		print(".file 2,\"%s\"\n", file);
 		currentfile = file;
+		stabFileId++;
+		print(".debug file %d:%s\n", stabFileId, currentfile);
 	}
 }
 
 /* stabline - emit stab entry for source coordinate *cp */
 static void stabline(Coordinate *cp) {
 	if (cp->file && cp->file != currentfile) {
-		print(".file 2,\"%s\"\n", cp->file);
 		currentfile = cp->file;
+		stabFileId++;
+		print(".debug file %d:%s\n", stabFileId, currentfile);
 	}
-	print(".loc 2,%d\n", cp->y);
+	print(".debug line %d:%d\n", stabFileId, cp->y);
 }
 
 /* stabsym - output a stab entry for symbol p */
