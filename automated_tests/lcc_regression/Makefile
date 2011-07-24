@@ -1,5 +1,5 @@
 # Set your customisations here:
-TEST_FPGA=1 # Run LC3 executable on the FPGA. Comment if simulation based test is prefered
+#TEST_FPGA=1 # Run LC3 executable on the FPGA. Comment if simulation based test is prefered
 PYTHON=/cygdrive/c/Python26/python
 SERIAL_BAUD=115200
 #SERIAL_BAUD=19200
@@ -9,7 +9,7 @@ SERIAL_BAUD=115200
 BASEDIR=../
 include $(BASEDIR)Make.common
 
-LCC=lcc -target=lc3dtu
+LCC=lcc -g #-target=lc3dtu
 
 SRC=$(wildcard *.c)
 ASM=$(SRC:.c=.asm)
@@ -23,7 +23,8 @@ NO_INPUT_TESTS=$(NO_INPUT_SRC:=.test)
 
 compile_all: $(ASM) $(ASM_LCC)
 
-test: $(NO_INPUT_TESTS)
+
+tests: $(NO_INPUT_TESTS)
 
 
 

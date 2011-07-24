@@ -10,7 +10,7 @@
 ## Command definitions
 
 #On some systems might need to use: ECHO=echo -e
-ECHO=echo -e
+ECHO=echo
 
 SED=sed
 # On SUN use gsed
@@ -29,7 +29,8 @@ RUN_FPGA=$(PYTHON) 'c:\lc3\bin\serial_cat.py' -b $(SERIAL_BAUD)
 CROP_OUTPUT_FPGA=$(SED) '0,/^--- Starting user code at x3000... ---/ d; /^--- halting the LC-3 ---/,$$ d; /^ *$$/ d'
 
 RUN_SIM=$(ECHO) "option flush off\ncontinue\nquit" | $(LCSIM)
-CROP_OUTPUT_SIM=$(SED) -n '/^(lc3sim)/,/^--- halting the LC-3 ---/ { /^ *$$/ d; /^(lc3sim) Will not flush the console/ d;  s/^(lc3sim) //; /^--- halting the LC-3/ d;  p } '
+#CROP_OUTPUT_SIM=$(SED) -n '/^(lc3sim)/,/^--- halting the LC-3 ---/ { /^ *$$/ d; /^(lc3sim) Will not flush the console/ d;  s/^(lc3sim) //; /^--- halting the LC-3/ d;  p } '
+CROP_OUTPUT_SIM=$(SED) '1,/^(lc3sim) continue/ d ; /^--- halting the LC-3/,$$ d; /^ *$$/ d'
 
 
 ##############**###########
