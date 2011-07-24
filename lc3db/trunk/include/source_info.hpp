@@ -43,16 +43,33 @@ struct _SourceLocation;
 struct _HLLSourceLocation;
 struct _MachineSourceLocation;
 
+enum VariableKind {
+	FileGlobal,
+	FileStatic,
+	FunctionStatic,
+	FunctionLocal,
+	FunctionParameter
+};
+
+
 class SourceInfo {
 public:
   SourceInfo();
   ~SourceInfo();
 
+  void reset_HLL_info(void);
   int add_source_file(int fileId, std::string filePath);
   void add_source_line(uint16_t firstAddress, uint16_t lastAddress, int fileId, int lineNo);
-  SourceLocation find_source_location_short(uint16_t address); 
-  SourceLocation find_source_location_absolute(uint16_t address); 
-  uint16_t find_line_start_address(std::string fileName, int lineNo); 
+  void add_type(int typeId, const char* typeDescriptor);
+  void start_declaration_block(const char* functionName, int level, uint16_t addresses);
+  void finish_declaration_block(const char* functionName, int level, uint16_t addresses);
+  void add_absolute_variable(VariableKind kind, int typeId, const char* sourceName, const char* assemblerLabel);
+  void add_stack_variable(VariableKind kind, int typeId, const char* sourceName, int frameOffset);
+  void add_function(bool isStatic, int returnTypeId, const char* sourceName, const char* assemblerLabel);
+
+  SourceLocation find_source_location_short(uint16_t address);
+  SourceLocation find_source_location_absolute(uint16_t address);
+  uint16_t find_line_start_address(std::string fileName, int lineNo);
   std::map<std::string, uint16_t> symbol;
 
 private:

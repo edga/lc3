@@ -83,6 +83,12 @@ struct _SourceLocation
 SourceInfo::SourceInfo() {}
 SourceInfo::~SourceInfo() {}
 
+void SourceInfo::reset_HLL_info(void)
+{
+  // FixMe: Is this enough or should we clean-up each element (find out about memory management of the map). 
+  HLLSources.clear();
+}
+
 int SourceInfo::add_source_file(int fileId, std::string filePath)
 {
   int i;
@@ -134,6 +140,83 @@ void SourceInfo::add_source_line(uint16_t lineStart, uint16_t lineEnd, int userF
   }
   pfa.push_back(lineStart);
 }
+
+/* Add type definition to the debugger:
+ * - typeDescriptor is string representation of the type.
+ *   It uses character codes to describe kind of composite types (struct/array/function...) and typeId's of previously added types.
+ * - typeId is code by which the given type will be further referenced (by variables or other types)
+ */
+void SourceInfo::add_type(int typeId, const char* typeDescriptor){
+  // FixMe: need to deal with forward declarations (code 'x') of structs/...
+ 
+  // All types are hardcoded to int for now, this function doesn't do anything
+}
+
+static int currentBlockLevel = -1;
+/* Start a variable declaration block (a new local scope for variables, left brace symbol '{' in C)
+ * - functionName: name of C function to which this block belongs
+ * - level: the level for nested scopes (0 is the block for the whole function)
+ * - address: the machine address where the block starts
+ */
+void SourceInfo::start_declaration_block(const char* functionName, int level, uint16_t addresses){
+  // All types are hardcoded to int for now, this function doesn't do anything
+  fprintf(stderr, "%*s{ //%s at 0x%04x\n", level*2, "", functionName, addresses);
+  currentBlockLevel = level;
+}
+
+/* Finish a variable declaration block (last created local scope for variables, right brace symbol '}' in C)
+ * - functionName: name of C function to which this block belongs
+ * - level: the level for nested scopes (0 is the block for the whole function)
+ * - address: the machine address where the block ends
+ */
+void SourceInfo::finish_declaration_block(const char* functionName, int level, uint16_t addresses){
+  fprintf(stderr, "%*s} //%s at 0x%04x\n", level*2, "", functionName, addresses);
+  assert(level == currentBlockLevel);
+  currentBlockLevel--;
+}
+
+/* Add information about the absolute variable (not stack frame relative):
+ * - kind: the kind of variable, to distinguish between FileGlobal, FileStatic and FunctionStatic   
+ * - typeId: the variable type (must be previously registered by calling add_type())
+ * - sourceName: the name of variable in the C source (as seen by the user)
+ * - assemblerLabel: the assembler label which points the variable start addresses
+ */
+void SourceInfo::add_absolute_variable(VariableKind kind, int typeId, const char* sourceName, const char* assemblerLabel){
+  if (kind==FileGlobal) {
+	fprintf(stderr, "T%d %s // at %s\n", typeId, sourceName, assemblerLabel);
+  } else if (kind==FileStatic) {
+	fprintf(stderr, "static T%d %s // at %s\n", typeId, sourceName, assemblerLabel);
+  } else if (kind==FunctionStatic) {
+	fprintf(stderr, "%*sstatic T%d %s // at %s\n", currentBlockLevel*2+2, "", typeId, sourceName, assemblerLabel);
+  }
+}
+
+/* Add information about the stack frame relative variable:
+ * - kind: the kind of variable, to distinguish between FunctionLocal and FunctionParameter
+ * - typeId: the variable type (must be previously registered by calling add_type())
+ * - sourceName: the name of variable in the C source (as seen by the user)
+ * - frameOffset: the offset from current frame (the frame is pointed by R5,
+ *   the positive offsets are used for parameters and the rest for locals)
+ */
+void SourceInfo::add_stack_variable(VariableKind kind, int typeId, const char* sourceName, int frameOffset){
+  if (kind==FunctionParameter) {
+	fprintf(stderr, "     param T%d %s // at R5[%d]\n", typeId, sourceName, frameOffset);
+  } else if (kind==FunctionLocal) {
+	fprintf(stderr, "%*sT%d %s // at R5[%d]\n", currentBlockLevel*2+2, "", typeId, sourceName, frameOffset);
+  }
+}
+
+/* Add information about the function:
+ * - isStatic: the kind of the function, to distinguish between static and global
+ * - returnTypeId: the type of return value (must be previously registered by calling add_type())
+ * - sourceName: the name of function in the C source (as seen by the user)
+ * - assemblerLabel: the assembler label which points the function start addresses (entry point)
+ */
+void SourceInfo::add_function(bool isStatic, int returnTypeId, const char* sourceName, const char* assemblerLabel){
+  fprintf(stderr, "%s%s returns T%d // at %s\n", isStatic?"static ":"", sourceName, returnTypeId, assemblerLabel);
+}
+
+
 
 uint16_t SourceInfo::find_line_start_address(std::string fileName, int lineNo) 
 {

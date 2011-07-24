@@ -115,14 +115,16 @@ extern "C" {
 uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t *pEntry)
 {
   char buf[4096];
+  const char *line_error = NULL;
   int debugLine;
   int linenum;
   int fileId = -1;
+  int typeId = -1;
   int addr, lastAddr;
   int c;
   FILE *f;
   uint16_t ret;
-  char *entryLabel = NULL;
+  const char *entryLabel = NULL;
   std::string object = file;
   std::string base = object.substr(0, object.rfind(".obj"));
   std::string debug = base + ".dbg";
@@ -133,16 +135,32 @@ uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t
   f = fopen(debug.c_str(), "r");
   if (!f) return ret;
 
+  /* Instead of introducing one more special directive to the assembler,
+   * assume that we have C program if fileID > 0 was encountered.
+   * See processing of '@' lines below.
+   *
   if (1 == fscanf(f, "ENTRY:%s\n", buf)) {
     entryLabel = strdup(buf);
   } else {
     fprintf(stderr, "ENTRY label missing (will break on first word)\n");
   }
+  */
+
+  /* Discard all previous Higher Level Language source information.
+   * The assembly level information is word based, and will be overwritten
+   * individually, to allow loading of multiple source files.
+   */
+  src_info.reset_HLL_info();
+  fprintf(stderr, "\n--------------------- starting parsing debug file: %s -------------------------------\n", debug.c_str());
+  
 
   debugLine = 0;
   while (!feof(f)) {
     debugLine++;
     c = fgetc(f);
+
+    /* default error if not changed by parsing */
+    line_error = "Wrong line format";
 
     switch(c) {
     case '#':
@@ -150,33 +168,113 @@ uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t
         fgets(buf, sizeof(buf), f);
         buf[strlen(buf) - 1] = 0;
         src_info.add_source_file(fileId, std::string(buf));
-      } else {
-        fprintf(stderr, "Wrong line format in debug information file: %s (line: %d)\n", debug.c_str(), debugLine);
-      }
+	line_error = NULL;
+      } 
       break;
 
     case '!':
       if (2 == fscanf(f, "%x:%s\n", &addr, buf)) {
         src_info.symbol[buf] = addr;
-      } else {
-        fprintf(stderr, "Wrong line format in debug information file: %s (line: %d)\n", debug.c_str(), debugLine);
+	line_error = NULL;
       }
       break;
 
     case '@':
       if (4 == fscanf(f, "%d:%d:%x:%x\n", &fileId, &linenum, &addr, &lastAddr)) {
 	src_info.add_source_line(addr & 0xFFFF, lastAddr & 0xFFFF, fileId, linenum);
-      } else {
-        fprintf(stderr, "Wrong line format in debug information file: %s (line: %d)\n", debug.c_str(), debugLine);
+	if (fileId > 0) { /* Assume C source if non 0 file ID found */
+	  entryLabel = "main";
+	}
+	line_error = NULL;
+      }
+      break;
+
+    case 'T':
+      if (2 == fscanf(f, " %d=%s\n", &typeId, buf)) {
+	/* TODO: maybe it's better to have all the parsing/format in one place, so decode the type here */
+	src_info.add_type(typeId, buf);
+	line_error = NULL;
+      }
+      break;
+
+    case 'B':
+      {
+	char kind;
+	char functionName[256];
+	int level;
+        //fgets(buf, sizeof(buf), f);
+	//printf("buf: %s; Ret: %d; kind:%c, n:%s, l:%d, %04x\n", buf, sscanf(buf, " %c:%[^:]:%d:%x\n", &kind, functionName, &level, &addr), kind, functionName, level, addr);
+	//if (4 == sscanf(buf, " %c:%[^:]:%d:%x\n", &kind, functionName, &level, &addr)) {
+	if (4 == fscanf(f, " %c:%[^:]:%d:%x\n", &kind, functionName, &level, &addr)) {
+	  line_error = NULL;
+	  if (kind == 'S') {
+	    src_info.start_declaration_block(functionName, level, addr);
+	  } else if (kind == 'E') {
+	    src_info.finish_declaration_block(functionName, level, addr);
+	  } else {
+	    line_error = "Wrong declaration block kind ('S':start or 'E':end expected)";
+	  }
+	}
+      }
+      break;
+
+    case 'S':
+      {
+	char kind;
+	char functionName[256];
+	char info1[256];
+	char info2[256];
+	int level;
+	if (4 == fscanf(f, " %c%d:%[^:]:%s\n", &kind, &typeId, info1, info2)) {
+	  line_error = NULL;
+	  /* maybe it's better to have all the parsing/format in one place, so we decode the symbol here */
+	  switch (kind) {
+	    case 'G':
+	    case 'S':
+	    case 's':
+	      {
+		VariableKind varKind = (kind=='G') ? FileGlobal : (kind=='S') ? FileStatic : FunctionStatic;
+		// Scope, Type, C (source) name, LC3 (assembler) label
+		src_info.add_absolute_variable(varKind, typeId, info1, info2);
+	      }
+	      break;
+	    case 'l':
+	    case 'p':
+	      {
+		int offset = atoi(info2);
+		VariableKind varKind = (kind=='l') ? FunctionLocal : FunctionParameter;
+		// Scope, Type, C (source) name, Frame offset
+		src_info.add_stack_variable(varKind, typeId, info1, offset);
+	      }
+	      break;
+	    case 'F':
+	    case 'f':
+	      {
+		int isStatic = ('f'==kind); // Is this static or global function
+		// isStatic, ReturnType, C (source) name, LC3 (assembler) label
+		src_info.add_function(isStatic, typeId, info1, info2);
+	      }
+	      break;
+
+	    default:
+	      line_error = "Unrecognised symbol kind";
+	  } 
+	}
       }
       break;
 
     default:
-        fprintf(stderr, "Unrecognised line type in debug information file: %s (line: %d)\n", debug.c_str(), debugLine);
+      	line_error = "Unrecognised line type";
+    }
+
+    if (line_error) {
+        fprintf(stderr, "%s in debug information file: %s (line: %d)\n", line_error, debug.c_str(), debugLine);
         /* read reminder of the line */
         fgets(buf, sizeof(buf), f);
     }
+
   }
+  fprintf(stderr, "-----------------------------------------------------------------\n");
 
   if (pEntry) {
     if (entryLabel && src_info.symbol.count(entryLabel)) {
