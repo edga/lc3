@@ -17,7 +17,7 @@ static void     docall(Node);
 static void     dumpcover(Node, int, int);
 static void     dumpregs(char *, char *, char *);
 static void     dumprule(int);
-static void     dumptree(Node);
+void     dumptree(Node);
 static void     genreload(Node, Symbol, int);
 static void     genspill(Symbol, Node, Symbol);
 static Symbol   getreg(Symbol, unsigned*, Node);
@@ -262,7 +262,7 @@ int range(Node p, int lo, int hi) {
 	}
 	return LBURG_MAX;
 }
-static void dumptree(Node p) {
+void dumptree(Node p) {
 	if (p->op == VREG+P && p->syms[0]) {
 		fprint(stderr, "VREGP(%s)", p->syms[0]->name);
 		return;
@@ -283,7 +283,7 @@ static void dumptree(Node p) {
 		if (p->kids[0])
 			dumptree(p->kids[0]);
 		break;
-	case CVF: case CVI: case CVP: case CVU: case JUMP: 
+	case CVF: case CVI: case CVP: case CVU: case JUMP:
 	case ARG: case BCOM: case NEG: case INDIR:
 		dumptree(p->kids[0]);
 		break;
@@ -685,7 +685,7 @@ static Symbol spillee(Symbol set, unsigned mask[], Node here) {
 	}
 	assert(bestreg); /* Must be able to spill something. Reconfigure the register allocator
 		to ensure that we can allocate a register for all nodes without spilling
-		the node's necessary input regs. */	
+		the node's necessary input regs. */
 	assert(bestreg->x.regnode->vbl == NULL); /* Can't spill register variables because
 		the reload site might be in other blocks. Reconfigure the register allocator
 		to ensure that this register is never allocated to a variable. */

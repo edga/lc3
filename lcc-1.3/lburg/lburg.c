@@ -7,6 +7,7 @@
 #include <time.h>
 #include "lburg.h"
 
+extern int yylineno;
 static char rcsid[] = "$Id: lburg.c,v 1.1.1.1 2004/03/24 04:37:35 sjp Exp $";
 static char *prefix = "";
 static int Tflag = 0;
@@ -39,8 +40,9 @@ static void emittest(Tree t, char *v, char *suffix);
 
 int main(int argc, char *argv[]) {
 	int c, i;
+	char *inputName = NULL;
 	Nonterm p;
-	
+
 	for (i = 1; i < argc; i++)
 		if (strcmp(argv[i], "-T") == 0)
 			Tflag = 1;
@@ -53,6 +55,7 @@ int main(int argc, char *argv[]) {
 				argv[0]);
 			exit(1);
 		} else if (infp == NULL) {
+			inputName = argv[i];
 			if (strcmp(argv[i], "-") == 0)
 				infp = stdin;
 			else if ((infp = fopen(argv[i], "r")) == NULL) {
@@ -90,6 +93,9 @@ int main(int argc, char *argv[]) {
 	if (start)
 		emitlabel(terms, start, ntnumber);
 	emitkids(rules, nrules);
+	if (inputName && infp != stdin) {
+		fprintf(outfp, "#line %d \"%s\"\n", yylineno, inputName);
+	}
 	if (!feof(infp))
 		while ((c = getc(infp)) != EOF)
 			putc(c, outfp);
@@ -123,7 +129,7 @@ static char *stringf(char *fmt, ...) {
 	vsprintf(buf, fmt, ap);
 	va_end(ap);
 	return strcpy(alloc(strlen(buf) + 1), buf);
-}	
+}
 
 struct entry {
 	union {
@@ -313,7 +319,7 @@ static void print(char *fmt, ...) {
 					putc('\t', outfp);
 				break;
 				}
-			default: putc(*fmt, outfp); break;			
+			default: putc(*fmt, outfp); break;
 			}
 		else
 			putc(*fmt, outfp);
@@ -652,7 +658,7 @@ static void emitstruct(Nonterm nts, int ntnumber) {
 	for ( ; nts; nts = nts->link) {
 		int n = 1, m = nts->lhscount;
 		while ((m >>= 1) != 0)
-			n++;		
+			n++;
 		print("%2unsigned int %P%S:%d;\n", nts, n);
 	}
 	print("%1} rule;\n};\n\n");

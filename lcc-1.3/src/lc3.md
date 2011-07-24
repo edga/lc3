@@ -419,6 +419,8 @@ stmt: ARGB(INDIRB(reg))       "#argb \n"  10
 stmt: ASGNB(reg,INDIRB(reg))  "#asgnb\n"  10
 %%
 
+#line 423 "lc3.md"
+
 #define ck(i) return (i) ? 0 : LBURG_MAX
 
 
@@ -618,7 +620,7 @@ static void progbeg(int argc, char *argv[]) {
 	print("LD R7, SERIAL_MONITOR_ADDR\n");		
 	print("jmp R7\n");
 	print("GLOBAL_DATA_POINTER .FILL GLOBAL_DATA_START\n");
-	print("GLOBAL_MAIN_POINTER .FILL main\n");
+	print("GLOBAL_MAIN_POINTER .FILL lc3_main\n");
 	print("STACK_ADDR .FILL xdfff\n");
 	print("SERIAL_MONITOR_ADDR .FILL x0200\n");
 #endif
@@ -727,17 +729,49 @@ static void emit2(Node p) {
 
 			break;
 
+extern void dumptree(Node p);
 /***********Handles spilling a register*********************************/
 /*does it without telling the back end to allocate another register*/
-		case ASGN+U: case ASGN+I: case ASGN+P:
+		case INDIR+U: case INDIR+I: case INDIR+P:
 			if( specific(LEFT_CHILD(p)->op) == VREG+ P) {
-				print("; Warning: ASGN+U/I/P\n");
+				if (0) {
+					FILE * f = stderr;
+					stderr = stdout;
+					fprint(stderr, "\n; Warning: INDIR+U/I/P:\t");
+					dumptree(p);
+					fprintf(stderr, "\n; Warning: l %s\n",LEFT_CHILD(p)->syms[0]->x.name);
+					stderr = f;
+				}
 				break;
 			}
-			print("; <spilling %d>\n",atoi (LEFT_CHILD(p)->syms[0]->x.name));
+			if (0) {
+				FILE * f = stderr;
+				stderr = stdout;
+
+				fprintf(stderr, "\n; Warning: Unhandled: INDIR+U/I/P:\t");
+				dumptree(p);
+				fprintf(stderr, "\n; Warning: Unhandled l %s\n",LEFT_CHILD(p)->syms[0]->x.name);
+				stderr = f;
+			}
+			break;
+
+		case ASGN+U: case ASGN+I: case ASGN+P:
+			if( specific(LEFT_CHILD(p)->op) == VREG+ P) {
+				if (0) {
+					FILE * f = stderr;
+					stderr = stdout;
+					fprintf(stderr, "\n; Warning: ASGN+U/I/P:\t");
+					dumptree(p);
+					fprintf(stderr, "\n; Warning: l %s, r %d\n",LEFT_CHILD(p)->syms[0]->x.name,
+							getregnum(RIGHT_CHILD(p)));
+					stderr = f;
+				}
+				break;
+			}
+			print("; <spilling %s>\n",LEFT_CHILD(p)->syms[0]->x.name);
 			i=atoi(LEFT_CHILD(p)->syms[0]->x.name);
 			lc3_store_far_on_stack(getregnum(RIGHT_CHILD(p)), i);
-			print("; </spilling %d>\n",atoi (LEFT_CHILD(p)->syms[0]->x.name));
+			print("; </spilling %s>\n",LEFT_CHILD(p)->syms[0]->x.name);
 			break;
 
 /***********Conditional Branches---note: unsigned ones dont always work*****/
@@ -1263,7 +1297,6 @@ static void emit2(Node p) {
  *************************************************************/
 static void doarg(Node p) {
 	assert(p && p->syms[0]);
-	printf(";test: local (doarg): %s, %s \n", p->syms[0]->name, p->syms[0]->x.name);
 	mkactual(1, p->syms[0]->u.c.v.i);
 }
 /************************************************************
@@ -1272,9 +1305,9 @@ static void doarg(Node p) {
   on the stack.
  *************************************************************/
 static void local(Symbol p) {
-    printf(";test: local: %s, %s \n", p->name, p->x.name);
     if (askregvar(p, rmap(ttob(p->type))) == 0)
         mkauto(p);
+//    printf(";test: local: %s, %s %d\n", p->name, p->x.name, p->x.offset);
 }
 /************************************************************
   function
@@ -1305,14 +1338,14 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
 	framesize = maxoffset+1;
 
-	print(";;;;;;;;;;;;;;;;;;;;;;;;;;;;%s;;;;;;;;;;;;;;;;;;;;;;;;;;;;\n", f->x.name);
-		printf(";test: function:%s, %s\n", f->name, f->x.name);
-	if(strcmp("main",f->x.name)==0) {
-		print("%s\n", f->x.name);
-	} else {
-		print("LC3_GFLAG %s LC3_GFLAG .FILL lc3_%s\n", f->x.name, f->x.name);
+	print(";;;;;;;;;;;;;;;;;;;;;;;;;;;;%s;;;;;;;;;;;;;;;;;;;;;;;;;;;;\n", f->name);
+	//	printf(";test: function:%s, %s\n", f->name, f->x.name);
+	//if(strcmp("main",f->x.name)==0) {
+	//	print("%s\n", f->x.name);
+	//} else {
+		print("LC3_GFLAG %s LC3_GFLAG .FILL lc3_%s\n", f->name, f->x.name);
 		print("lc3_%s\n", f->x.name);
-	}
+	//}
 
 	lc3_addimm(6,6,-2);//allocate space for return val
 	lc3_store(7,6,0);//store return addr
@@ -1424,13 +1457,15 @@ static void import(Symbol p) {
   Sets up the symbol name to be 'L'+symbol name in case of labels.
  *************************************************************/
 static void defsymbol(Symbol p) {
+	// FixMe: for some reason this doesn't work (i.e. the default case is executed)
 	if (p->scope >= LOCAL && p->sclass == STATIC)
 		p->x.name = stringf("L%d_%s", genlabel(1), filename);
 	else if (p->generated)
 		p->x.name = stringf("L%s_%s", p->name, filename);
-	else
-		assert(p->scope != CONSTANTS || isint(p->type) || isptr(p->type)),
-	p->x.name = p->name;
+	else {
+		assert(p->scope != CONSTANTS || isint(p->type) || isptr(p->type));
+		p->x.name = p->name;
+	}
 }
 /************************************************************
   address
@@ -1555,6 +1590,57 @@ static void stabsym(Symbol);
 
 static char *currentfile;
 
+#include "stab.h"
+static int ntypes = 0;
+static void asgncode(Type, int);
+static void dbxout(Type);
+static int dbxtype(Type);
+static int emittype(Type, int, int);
+
+/*
+
+  Type information
+  ----------------
+  void			v
+  int (signed/unsgn)	i/I
+  char (textual)	c
+  short (signed/unsgn)	h/H
+  long (signed/unsgn)	l/L
+  pointer		*<baseT>
+  enum			e;<name>:<val>,<name2>:<val2>
+  array			a<baseT>,<length>,<baseSize/padding>
+  struct		s<size>;<name>:<type>,<bitOffset>,<bitSize>;<name2>:<type2>,<bitOffset2>,<bitSize2>
+  union			u	// save as struct
+  function		f<returnT>;<pName>:<pType>,<location/frameOffset>;<pName2>:<pType2>,<location/frameOffset2>
+  
+  forward declaration   x<Struct/Union>
+
+  variable symbols:		
+  ----------
+	G	Global variable	
+ 	S	File scope static (file internal)
+	s	Function scope static (static local)
+	l	Local variable
+	p	Parameter
+  function symbols:
+  ----------
+  	F	Global function
+	f	Local (static) function
+
+  .debug block S:<functionName>:<level>		Start of the block
+  .debug block E:<functionName>:<level>		End of the block
+
+*/
+
+/* stabblock - output a stab entry for '{' or '}' at level lev */
+static void stabblock(int brace, int lev, Symbol *p) {
+	print(".debug block %c:%s:%d\n",brace == '{' ? 'S' : 'E', cfunc->x.name,  lev);
+	if (brace == '{')
+		while (*p)
+			stabsym(*p++);
+}
+
+  
 
 /* stabinit - initialize stab output */
 static void stabinit(char *file, int argc, char *argv[]) {
@@ -1563,6 +1649,24 @@ static void stabinit(char *file, int argc, char *argv[]) {
 		stabFileId++;
 		print(".debug file %d:%s\n", stabFileId, currentfile);
 	}
+#if 1
+	dbxtype(inttype);
+	dbxtype(chartype);
+//	dbxtype(doubletype);
+//	dbxtype(floattype);
+//	dbxtype(longdouble);
+	dbxtype(longtype);
+	dbxtype(longlong);
+	dbxtype(shorttype);
+	dbxtype(signedchar);
+	dbxtype(unsignedchar);
+	dbxtype(unsignedlong);
+	dbxtype(unsignedlonglong);
+	dbxtype(unsignedshort);
+	dbxtype(unsignedtype);
+	dbxtype(voidtype);
+//	foreach(types, GLOBAL, (Closure)stabtype, NULL);
+#endif
 }
 
 /* stabline - emit stab entry for source coordinate *cp */
@@ -1576,13 +1680,6 @@ static void stabline(Coordinate *cp) {
 	print(".debug line %d:%d\n", stabFileId, cp->y);
 }
 
-#include "stab.h"
-static int ntypes;
-
-static void asgncode(Type, int);
-static void dbxout(Type);
-static int dbxtype(Type);
-static int emittype(Type, int, int);
 
 /* asgncode - assign type code to ty */
 static void asgncode(Type ty, int lev) {
@@ -1598,6 +1695,10 @@ static void asgncode(Type ty, int lev) {
 		asgncode(ty->type, lev + 1);
 		/* fall thru */
 	case VOID: case INT: case UNSIGNED: case FLOAT:
+		if (ty->x.typeno == 0){
+			ty->x.typeno = ++ntypes;
+			//fprintf(stderr, "type as i: %p %d\n", ty, ntypes);
+		}
 		break;
 	case STRUCT: case UNION: {
 		Field p;
@@ -1605,13 +1706,16 @@ static void asgncode(Type ty, int lev) {
 			asgncode(p->type, lev + 1);
 		/* fall thru */
 	case ENUM:
-		if (ty->x.typeno == 0)
+		if (ty->x.typeno == 0){
 			ty->x.typeno = ++ntypes;
+			//fprintf(stderr, "type as: %p %d\n", ty, ntypes);
+		}
 		if (lev > 0 && (*ty->u.sym->name < '0' || *ty->u.sym->name > '9'))
+			// FixMe: commented
 			dbxout(ty);
 		break;
 		}
-	default:
+	default: 
 		assert(0);
 	}
 }
@@ -1621,12 +1725,14 @@ static void dbxout(Type ty) {
 	ty = unqual(ty);
 	if (!ty->x.printed) {
 		int col = 0;
-		print(";.stabs \""), col += 8;
-		if (ty->u.sym && !(isfunc(ty) || isarray(ty) || isptr(ty)))
-			print("%s", ty->u.sym->name), col += strlen(ty->u.sym->name);
-		print(":%c", isstruct(ty) || isenum(ty) ? 'T' : 't'), col += 2;
-		emittype(ty, 0, col);
-		print("\",%d,0,0,0\n", N_LSYM);
+		//if (ty->u.sym && !(isfunc(ty) || isarray(ty) || isptr(ty)))
+		//	print("%s", ty->u.sym->name);
+		int tc = emittype(ty, 0, col);
+		if (ty->u.sym && !(isfunc(ty) || isarray(ty) || isptr(ty))) {
+			print("; .debug typedef %s:%c%d\n", ty->u.sym->name,
+			       	isstruct(ty) || isenum(ty) ? 'T' : 't', tc);
+//			       	isstruct(ty) || isenum(ty) ? 'T' : 't', dbxtype(ty));
+		}
 	}
 }
 
@@ -1638,98 +1744,99 @@ static int dbxtype(Type ty) {
 }
 
 /*
- * emittype - emit ty's type number, emitting its definition if necessary.
- * Returns the output column number after emission; col is the approximate
- * output column before emission and is used to emit continuation lines for long
- * struct, union, and enum types. Continuations are not emitted for other types,
- * even if the definition is long. lev is the depth of calls to emittype.
+ * emittype - return ty's type number, emitting its definition if necessary.
  */
 static int emittype(Type ty, int lev, int col) {
 	int tc = ty->x.typeno;
+	int outSize = 64;
+	char *outBuf = malloc(outSize);
+	char *out = outBuf;
 
+	if(ty->x.printed) {
+		if(tc == 0) fprintf(stderr, "WARNING: Skipping type: %d, %d\n", lev, col); 
+		return tc;
+	}
+
+	/* don't create separate types for const/volatile qualifiers */
 	if (isconst(ty) || isvolatile(ty)) {
-		col = emittype(ty->type, lev, col);
+		tc = emittype(ty->type, lev, col);
 		ty->x.typeno = ty->type->x.typeno;
 		ty->x.printed = 1;
-		return col;
+		return tc;
 	}
-	if (tc == 0) {
-		ty->x.typeno = tc = ++ntypes;
-/*              fprint(2,"`%t'=%d\n", ty, tc); */
-	}
-	print("%d", tc), col += 3;
-	if (ty->x.printed)
-		return col;
+
+	asgncode(ty, 0);
 	ty->x.printed = 1;
+	// FixMe: Use continuations, or reallocable output buffer
+	//        because structure descriptions can be arbitrary long
+	// FixMe: don't emit standard types
+
 	switch (ty->op) {
 	case VOID:	/* void is defined as itself */
-		print("=%d", tc), col += 1+3;
+		*(out++) = 'v'; *(out++) = 0;
+		break;
+	case CHAR:
+		/* This is unreachable in lcc 4.x version of the interface.
+		   CHAR is encoded as INT with size==align==1 in new interface version */
+		*(out++) = 'c'; *(out++) = 0;
 		break;
 	case INT:
-		if (ty == chartype)	/* plain char is a subrange of itself */
-			print("=r%d;%d;%d;", tc, ty->u.sym->u.limits.min.i, ty->u.sym->u.limits.max.i),
-				col += 2+3+2*2.408*ty->size+2;
-		else			/* other signed ints are subranges of int */
-			print("=r1;%D;%D;", ty->u.sym->u.limits.min.i, ty->u.sym->u.limits.max.i),
-				col += 4+2*2.408*ty->size+2;
+		if (ischar(ty)) {
+			*(out++) = 'c'; *(out++) = 0;
+		} else {
+			*(out++) = 'i'; *(out++) = 0;
+		}
 		break;
 	case UNSIGNED:
-		if (ty == chartype)	/* plain char is a subrange of itself */
-			print("=r%d;0;%u;", tc, ty->u.sym->u.limits.max.i),
-				col += 2+3+2+2.408*ty->size+1;
-		else			/* other signed ints are subranges of int */
-			print("=r1;0;%U;", ty->u.sym->u.limits.max.i),
-				col += 4+2.408*ty->size+1;
+		if (ischar(ty)) {
+			*(out++) = 'c'; *(out++) = 0;
+		} else {
+			*(out++) = 'I'; *(out++) = 0;
+		}
 		break;
 	case FLOAT:	/* float, double, long double get sizes, not ranges */
-		print("=r1;%d;0;", ty->size), col += 4+1+3;
+		fprintf(stderr, "Float types not supported\n");
 		break;
 	case POINTER:
-		print("=*"), col += 2;
-		col = emittype(ty->type, lev + 1, col);
+		out += sprintf(out, "*%d", emittype(ty->type, lev + 1, col));
 		break;
 	case FUNCTION:
-		print("=f"), col += 2;
-		col = emittype(ty->type, lev + 1, col);
+		out += sprintf(out, "f%d;", emittype(ty->type, lev + 1, col));
+		// FixMe: output arguments
 		break;
 	case ARRAY:	/* array includes subscript as an int range */
-		if (ty->size && ty->type->size)
-			print("=ar1;0;%d;", ty->size/ty->type->size - 1), col += 7+3+1;
-		else
-			print("=ar1;0;-1;"), col += 10;
-		col = emittype(ty->type, lev + 1, col);
+		tc = emittype(ty->type, lev + 1, col);
+		out += sprintf(out, "a%d,%d", tc,
+			       (ty->size && ty->type->size) ? ty->size/ty->type->size : -1);
 		break;
 	case STRUCT: case UNION: {
 		Field p;
 		if (!ty->u.sym->defined) {
-			print("=x%c%s:", ty->op == STRUCT ? 's' : 'u', ty->u.sym->name);
-			col += 2+1+strlen(ty->u.sym->name)+1;
+			out += sprintf(out, "x%c%s:", ty->op == STRUCT ? 's' : 'u', ty->u.sym->name);
 			break;
 		}
 		if (lev > 0 && (*ty->u.sym->name < '0' || *ty->u.sym->name > '9')) {
+			// FixMe: is this realy needed??
 			ty->x.printed = 0;
 			break;
 		}
-		print("=%c%d", ty->op == STRUCT ? 's' : 'u', ty->size), col += 1+1+3;
+		out += sprintf(out, "%c%d", ty->op == STRUCT ? 's' : 'u', ty->size);
 		for (p = fieldlist(ty); p; p = p->link) {
-			if (p->name)
-				print("%s:", p->name), col += strlen(p->name)+1;
-			else
-				print(":"), col += 1;
-			col = emittype(p->type, lev + 1, col);
+			tc = emittype(p->type, lev + 1, col);
+			out += sprintf(out, ";%s:%d,", (p->name) ? p->name : "", tc);
 			if (p->lsb)
-				print(",%d,%d;", 8*p->offset +
+				out += sprintf(out, "%d,%d", 8*p->offset +
 					(IR->little_endian ? fieldright(p) : fieldleft(p)),
 					fieldsize(p));
 			else
-				print(",%d,%d;", 8*p->offset, 8*p->type->size);
-			col += 1+3+1+3+1;	/* accounts for ,%d,%d; */
+				out += sprintf(out, "%d,%d", 8*p->offset, 8*p->type->size);
+			/*
 			if (col >= 80 && p->link) {
 				print("\\\\\",%d,0,0,0\n;.stabs \"", N_LSYM);
 				col = 8;
 			}
+			*/
 		}
-		print(";"), col += 1;
 		break;
 		}
 	case ENUM: {
@@ -1738,21 +1845,22 @@ static int emittype(Type ty, int lev, int col) {
 			ty->x.printed = 0;
 			break;
 		}
-		print("=e"), col += 2;
+		out += sprintf(out, "e");
 		for (p = ty->u.sym->u.idlist; *p; p++) {
-			print("%s:%d,", (*p)->name, (*p)->u.value), col += strlen((*p)->name)+3;
-			if (col >= 80 && p[1]) {
-				print("\\\\\",%d,0,0,0\n;.stabs \"", N_LSYM);
-				col = 8;
-			}
+			out += sprintf(out, ";%s:%d", (*p)->name, (*p)->u.value);
 		}
-		print(";"), col += 1;
 		break;
 		}
 	default:
 		assert(0);
 	}
-	return col;
+	tc = ty->x.typeno;
+	if (tc == 0) {
+		ty->x.typeno = tc = ++ntypes;
+		//fprintf(stderr, "type et: %p %d\n", ty, ntypes);
+	}
+	print(".debug type %d=%s\n", tc, outBuf);
+	return tc;
 }
 /* stabsym - output a stab entry for symbol p */
 void stabsym(Symbol p) {
@@ -1764,11 +1872,15 @@ void stabsym(Symbol p) {
 	if (p->generated || p->computed)
 		return;
 	if (isfunc(p->type)) {
-		print(";.stabs \"%s:%c%d\",%d,0,0,%s\n", p->name,
+		//print(".debug function %s(%s):%c%d\n", p->name, p->x.name,
+		print(".debug symbol %c%d:%s:lc3_%s\n",
 			p->sclass == STATIC ? 'f' : 'F', dbxtype(freturn(p->type)),
-			N_FUN, p->x.name);
+			p->name, p->x.name);
+			//p->sclass == STATIC ? 'f' : 'F', emittype(freturn(p->type), 0, 0));
 		return;
 	}
+	
+	// FixMe: check wants_argb
 	if (!IR->wants_argb && p->scope == PARAM && p->structarg) {
 		assert(isptr(p->type) && isstruct(p->type->type));
 		tc = dbxtype(p->type->type);
@@ -1776,36 +1888,28 @@ void stabsym(Symbol p) {
 	} else
 		tc = dbxtype(p->type);
 	if (p->sclass == AUTO && p->scope == GLOBAL || p->sclass == EXTERN) {
-		print(";.stabs \"%s:G", p->name);
-		code = N_GSYM;
+		print(".debug symbol G%d:%s:%s\n", tc, p->name, p->x.name);
 	} else if (p->sclass == STATIC) {
-		print(";.stabs \"%s:%c%d\",%d,0,0,%s\n", p->name, p->scope == GLOBAL ? 'S' : 'V',
-			tc, p->u.seg == BSS ? N_LCSYM : N_STSYM, p->x.name);
-		return;
+		print(".debug symbol %c%d:%s:%s\n",
+				p->scope == GLOBAL ? 'S' : 's', 
+				tc, p->name, p->x.name);
+		//return;
 	} else if (p->sclass == REGISTER) {
-		if (p->x.regnode) {
-			int r = p->x.regnode->number;
-			if (p->x.regnode->set == FREG)
-				r += 32;	/* floating point */
-				print(";.stabs \"%s:%c%d\",%d,0,", p->name,
-					p->scope == PARAM ? 'P' : 'r', tc, N_RSYM);
-			print("%d,%d\n", sz, r);
-		}
+		fprintf(stderr, "Register storage class not supported\n");
+		assert(0);
 		return;
 	} else if (p->scope == PARAM) {
-		print(";.stabs \"%s:p", p->name);
-		code = N_PSYM;
+		print(".debug symbol p%d:%s:%s\n", tc, p->name, p->x.name);
 	} else if (p->scope >= LOCAL) {
-		print(";.stabs \"%s:", p->name);
-		code = N_LSYM;
+		print(".debug symbol l%d:%s:%s\n", tc, p->name, p->x.name);
 	} else
 		assert(0);
-	print("%d\",%d,0,0,%s\n", tc, code,
-		p->scope >= PARAM && p->sclass != EXTERN ? p->x.name : "0");
+	//print("%d,%s\n", tc,
+	//	p->scope >= PARAM && p->sclass != EXTERN ? p->x.name : "0");
 }
 
 Interface lc3IR = {
-	1, 1, 1,  /* char */    // Edgar: 3rd param outofline is set, so forbids constant to apear in DAGs
+	1, 1, 1,  /* char */    // FixMe: 3rd param outofline is set, so forbids constant to apear in DAGs
 	1, 1, 1,  /* short */
 	1, 1, 1,  /* int */
 	1, 1, 1,  /* long */
@@ -1840,7 +1944,7 @@ Interface lc3IR = {
 	progend,
 	segment,
 	space,
-	0, 0, 0, stabinit, stabline, stabsym, 0,
+	stabblock, 0, 0, stabinit, stabline, stabsym, 0,
 	 /*   I(stabblock),
 	      I(stabend),
 	      I(stabfend),

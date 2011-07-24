@@ -3,22 +3,22 @@
 *
 * c.h -- header file for all the LCC back end
 *
-*  IN NO EVENT SHALL THE AUTHOR BE LIABLE TO ANY PARTY FOR DIRECT, 
-*  INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT 
-*  OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE AUTHOR 
+*  IN NO EVENT SHALL THE AUTHOR BE LIABLE TO ANY PARTY FOR DIRECT,
+*  INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT
+*  OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE AUTHOR
 *  HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*  
-*  THE AUTHOR SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT 
-*  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR 
-*  A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS" 
-*  BASIS, AND THE AUTHOR NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, 
+*
+*  THE AUTHOR SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT
+*  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+*  A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS"
+*  BASIS, AND THE AUTHOR NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT,
 *  UPDATES, ENHANCEMENTS, OR MODIFICATIONS."
 *
-*  Author:		Ajay Ladsaria 
+*  Author:		Ajay Ladsaria
 *  Version:		1
 *  Modification Date:	28 November 2003
-*  Filename:		c.h   
-*  History:		
+*  Filename:		c.h
+*  History:
 *  		The ischar() macro was changed to work in the case when intsize = 1 byte
 *
 ******************************************************************************/
@@ -72,8 +72,21 @@
 #define isunion(t)    (unqual(t)->op == UNION)
 #define isfunc(t)     (unqual(t)->op == FUNCTION)
 #define isptr(t)      (unqual(t)->op == POINTER)
+//
+// Original macro:
+//    Doesn't work on lc3 because sizeof(int) == 1
+//    macro yields true for all integer types
 //#define ischar(t)     ((t)->size == 1 && isint(t))
-#define ischar(t)     (unqual(t)->op == CHAR)
+//
+// Ajay's fix:
+//    Doesn't work because char is encoded as type.op == INT (in interface version 4.x)
+//    macro allways yields false (the CHAR here is from token type enum)
+//#define ischar(t)     (unqual(t)->op == CHAR)
+//
+// Edgar:
+// This should work as long as macro is used after type_init() is called
+#define ischar(t)     ((t) == chartype || (t) == unsignedchar || (t) == signedchar)
+
 #define isint(t)      (unqual(t)->op == INT \
                     || unqual(t)->op == UNSIGNED)
 #define isfloat(t)    (unqual(t)->op == FLOAT)
@@ -252,7 +265,7 @@ struct code {
 		struct {
 			Coordinate src;
 			int point;
-		} point; 
+		} point;
 		Node forest;
 		struct {
 			Symbol sym;
