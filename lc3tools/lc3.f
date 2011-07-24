@@ -231,7 +231,10 @@ typedef enum debug_stab_t debug_stab_t;
 enum debug_stab_t {
     D_FILE,
     D_LINE,
-    D_LINE_END
+    D_LINE_END,
+    D_TYPE,
+    D_SYMBOL,
+    D_BLOCK
 };
 
 
@@ -311,6 +314,7 @@ OP_SEP    {SPACE}*[, \t]{SPACE}*
 COMMENT   [;][^\n\r]*
 EMPTYLINE {SPACE}*{COMMENT}?
 ENDLINE   {EMPTYLINE}\r?\n\r?
+RESTLINE  [^\n\r]*{ENDLINE}
 
 /* operand formats */
 O_RRR  {SPACE}+{REGISTER}{OP_SEP}{REGISTER}{OP_SEP}{REGISTER}{ENDLINE}
@@ -331,7 +335,7 @@ O_     {ENDLINE}
    check for extra text after .END directive */
 %x ls_operands ls_garbage ls_finished
 /* lexing states for debug info */
-%x ls_debug_file ls_debug_line ls_debug_lineend
+%x ls_debug_file ls_debug_line ls_debug_lineend ls_debug_type ls_debug_symbol ls_debug_block
 
 %%
 
@@ -392,10 +396,16 @@ NOP       {inst.op = OP_NOP;   BEGIN (ls_operands);}
 \.DEBUG{SPACE}+FILE{SPACE}+ { BEGIN (ls_debug_file);}
 \.DEBUG{SPACE}+LINE{SPACE}+ { BEGIN (ls_debug_line);}
 \.DEBUG{SPACE}+LINEEND{SPACE}+ { BEGIN (ls_debug_lineend);}
+\.DEBUG{SPACE}+TYPE{SPACE}+ { BEGIN (ls_debug_type);}
+\.DEBUG{SPACE}+SYMBOL{SPACE}+ { BEGIN (ls_debug_symbol);}
+\.DEBUG{SPACE}+BLOCK{SPACE}+ { BEGIN (ls_debug_block);}
 
-<ls_debug_file>{DECIMAL}:[^\n\r]+{ENDLINE}   { handle_debug (D_FILE, yytext); new_inst_line(); BEGIN (0);}
-<ls_debug_line>{DECIMAL}:{DECIMAL}{ENDLINE}  { handle_debug (D_LINE, yytext); new_inst_line(); BEGIN (0);}
+<ls_debug_file>{DECIMAL}:{RESTLINE}             { handle_debug (D_FILE, yytext); new_inst_line(); BEGIN (0);}
+<ls_debug_line>{DECIMAL}:{DECIMAL}{ENDLINE}     { handle_debug (D_LINE, yytext); new_inst_line(); BEGIN (0);}
 <ls_debug_lineend>{DECIMAL}:{DECIMAL}{ENDLINE}  { handle_debug (D_LINE_END, yytext); new_inst_line(); BEGIN (0);}
+<ls_debug_type>{DECIMAL}={RESTLINE}             { handle_debug (D_TYPE, yytext); new_inst_line(); BEGIN (0);}
+<ls_debug_symbol>[FfGSslp]{DECIMAL}:[^:]+:{RESTLINE}  { handle_debug (D_SYMBOL, yytext); new_inst_line(); BEGIN (0);}
+<ls_debug_block>{RESTLINE}  { handle_debug (D_BLOCK, yytext); new_inst_line(); BEGIN (0);}
 
     /* rules for operand formats */
 <ls_operands>{O_RRR} {generate_instruction (O_RRR, yytext); BEGIN (0);}
@@ -855,7 +865,9 @@ handle_debug (debug_stab_t stype, char* opstr)
 
     switch(stype) {
         case D_FILE:
-	    fprintf (dbgout, "#%s\n", yytext);
+	    /* Just copy the value */
+	    //fprintf (dbgout, "#%s\n", yytext);
+	    fprintf (dbgout, "#%s\n", opstr);
 	    break;
 
         case D_LINE:
@@ -875,6 +887,25 @@ handle_debug (debug_stab_t stype, char* opstr)
             }
             dbg_line_state = DBG_LINE_NONE;
 	    break;
+
+	case D_TYPE:
+	    /* Just copy the value */
+	    fprintf (dbgout, "T %s\n", opstr);
+	    break;
+
+	case D_SYMBOL:
+	    /* Just copy the value */
+	    fprintf (dbgout, "S %s\n", opstr);
+	    break;
+
+	case D_BLOCK:
+	    {
+	    int is_block_start = opstr[0] == 'S';
+	    /* Just copy the value */
+
+	    fprintf (dbgout, "B %s:%.4x\n", opstr, (is_block_start) ? code_loc : code_loc-1);
+	    break;
+	    }
     }
 
 }
