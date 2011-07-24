@@ -38,6 +38,7 @@ enum state {
 	START=0, NUM1, NUM2, NUM3, ID1, ST1, ST2, ST3, COM1, COM2, COM3, COM4,
 	CC1, CC2, WS1, PLUS1, MINUS1, STAR1, SLASH1, PCT1, SHARP1,
 	CIRC1, GT1, GT2, LT1, LT2, OR1, AND1, ASG1, NOT1, DOTS1,
+	S_CR1, S_COMCR1,
 	S_SELF=MAXSTATE, S_SELFB, S_EOF, S_NL, S_EOFSTR,
 	S_STNL, S_COMNL, S_EOFCOM, S_COMMENT, S_EOB, S_WS, S_NAME
 };
@@ -62,6 +63,7 @@ struct	fsm {
 	START,	{ '\'' },	CC1,
 	START,	{ '/' },	COM1,
 	START,	{ EOFC },	S_EOF,
+	START,	{ '\r' },	S_CR1,
 	START,	{ '\n' },	S_NL,
 	START,	{ '-' },	MINUS1,
 	START,	{ '+' },	PLUS1,
@@ -86,6 +88,10 @@ struct	fsm {
 	START,	{ '}' },	ACT(CKET,S_SELF),
 	START,	{ '~' },	ACT(TILDE,S_SELF),
 	START,	{ '^' },	CIRC1,
+
+	/* handle dos newlines */
+	S_COMCR1,{ '\n' },	S_COMNL,
+	S_CR1,	{ '\n' },	S_NL,
 
 	/* saw a digit */
 	NUM1,	{ C_XX },	ACT(NUMBER,S_SELFB),
@@ -122,19 +128,19 @@ struct	fsm {
 	ST2,	{ C_XX },	ST2,
 	ST2,	{ '"' },	ACT(STRING, S_SELF),
 	ST2,	{ '\\' },	ST3,
-	ST2,	{ '\n' },	S_STNL,
+	ST2,	{ '\r', '\n' },	S_STNL,
 	ST2,	{ EOFC },	S_EOFSTR,
 
 	/* saw \ in string */
 	ST3,	{ C_XX },	ST2,
-	ST3,	{ '\n' },	S_STNL,
+	ST3,	{ '\r', '\n' },	S_STNL,
 	ST3,	{ EOFC },	S_EOFSTR,
 
 	/* saw ' beginning character const */
 	CC1,	{ C_XX },	CC1,
 	CC1,	{ '\'' },	ACT(CCON, S_SELF),
 	CC1,	{ '\\' },	CC2,
-	CC1,	{ '\n' },	S_STNL,
+	CC1,	{ '\r', '\n' },	S_STNL,
 	CC1,	{ EOFC },	S_EOFSTR,
 
 	/* saw \ in ccon */
@@ -150,18 +156,21 @@ struct	fsm {
 
 	/* saw / then *, start of comment */
 	COM2,	{ C_XX },	COM2,
+	COM2,	{ '\r' },	S_COMCR1,
 	COM2,	{ '\n' },	S_COMNL,
 	COM2,	{ '*' },	COM3,
 	COM2,	{ EOFC },	S_EOFCOM,
 
 	/* saw the * possibly ending a comment */
 	COM3,	{ C_XX },	COM2,
+	COM3,	{ '\r' },	S_COMCR1,
 	COM3,	{ '\n' },	S_COMNL,
 	COM3,	{ '*' },	COM3,
 	COM3,	{ '/' },	S_COMMENT,
 
 	/* // comment */
 	COM4,	{ C_XX },	COM4,
+	COM4,	{ '\r' },	S_CR1,
 	COM4,	{ '\n' },	S_NL,
 	COM4,	{ EOFC },	S_EOFCOM,
 
@@ -414,6 +423,7 @@ gettokens(Tokenrow *trp, int reset)
 
 			case S_STNL:
 				error(ERROR, "Unterminated string or char const");
+
 			case S_NL:
 				tp->t = ip;
 				tp->type = NL;
