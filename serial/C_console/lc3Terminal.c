@@ -133,7 +133,7 @@ int arg_parity = DEFAULT_PARITY;
 void usage(const char *progname) {
 	local_message("\nUsage:\n"
 			"   %s [-p][-n][-c CHUNK_SIZE] [-s BAUD:PARITY:COMPORT] [LC3_OBJ_FILES]\n"
-			"   %s [-c CHUNK_SIZE] [-s BAUD:PARITY:COMPORT] -x LC3_MEMORY_RANGE\n"
+			"   %s [-s BAUD:PARITY:COMPORT] -x LC3_MEMORY_RANGE\n"
 					  "  -p: program only. Don't ask LC3 to start uploaded program,\n"
 					  "      and don't launch terminal.\n"
 					  "  -n: no program check. Don't ask LC3 to send back uploaded program,\n"
@@ -150,7 +150,7 @@ void usage(const char *progname) {
 					  "  if -p is missing, the last object file specified is started after upload.\n"
 					  "\n"
 					  ,progname,
-					  ,progname,
+					  progname,
 					  EVENPARITY, MARKPARITY, NOPARITY, ODDPARITY, SPACEPARITY,
 					  DEFAULT_BAUD_RATE, DEFAULT_PARITY, DEFAULT_SERIAL_PORT);
 
@@ -242,8 +242,8 @@ void parse_options(int argc, char **argv){
 		}
 	}
 
-	if (arg_dump_start >= 0 && (opt_program_only || opt_no_program_check || argc > ap)) {
-		local_message("Error: \"-x\" can only be used with \"-c\" or \"-s\" \n\n");
+	if (arg_dump_start >= 0 && (arg_chunk_size > 0 ||  opt_program_only || opt_no_program_check || argc > ap)) {
+		local_message("Error: \"-x\" can only be used with \"-s\" \n\n");
 		usage_error = 1;
 	}
 	if (opt_program_only && argc <= ap) {
@@ -608,25 +608,28 @@ int program_device(HANDLE hCom, const char *program_file) {
 	return 0;
 }
 
-int dump_lc3_memory(HANDLE hCom, int lc3_word_start, int lc3_word_stop, int chunk_size) {
+int dump_lc3_memory(HANDLE hCom, int lc3_word_start, int lc3_word_stop) {
 	const int nbuff_words = 1024;
 	unsigned char buff[nbuff_words*2];
+	int w;
 	DWORD bytesRead;
-	DWORD remain;	// how many bytes of this chunk remaining to send
-	DWORD part;	// how many bytes to send in one go (limited by buffer size and remaining data)
+	DWORD words_remain;	// how many words left to receive
+	DWORD words_part;	// how many words to send in one go (limited by buffer size and remaining data)
+	DWORD words_done;// how many words were allready received from the start of requested address
+
+	words_remain = lc3_word_stop - lc3_word_start + 1;
 
 	// Wait some time to allow device to respond
 	Sleep(200);
 	PurgeComm(hCom, PURGE_RXCLEAR);
-
 
 	//// Send Memory Download command:
 	// Header:
 	buff[0] = LC3_CMD_GET_MEM[0];
 	buff[1] = LC3_CMD_GET_MEM[1];
 	// Transmission size: Network order (big-endian) in LC3 words
-	buff[2] = (char)(chunk_size/2 / 256);
-	buff[3] = (char)(chunk_size/2 % 256);
+	buff[2] = (char)(words_remain / 256);
+	buff[3] = (char)(words_remain % 256);
 	// Offset: Network order (big-endian) in LC3 words
 	buff[4] = (char)(lc3_word_start / 256);
 	buff[5] = (char)(lc3_word_start % 256);
@@ -634,45 +637,32 @@ int dump_lc3_memory(HANDLE hCom, int lc3_word_start, int lc3_word_stop, int chun
 		return -1;
 	}
 
-	todo: This is just copy paste, please update it with real code :)
+	words_done = 0;
 
-	*pErr_cnt = 0;
-	{
-		unsigned char lc3_buff[nbuff_words*2];
-		DWORD lc3_bytesRead;
-		int i;
-
-		// Wait some time to allow device to respond
-		Sleep(200);
-		SetLastError(ERROR_SUCCESS);
-		remain = chunk_size;
-		part = min(nbuff_words*2, remain);
-		while (remain) {
-			if (!ReadFile(hCom, lc3_buff, part, &lc3_bytesRead, NULL)
-					|| lc3_bytesRead < part){
-				local_message("Read from serial failed (received %lu of %d, error: %lu)\n",
-						lc3_bytesRead, part, GetLastError());
-				return -1;
-			}
-			for (i=0; i < bytesRead; i++) {
-				if (buff[i] != lc3_buff[i]) {
-					(*pErr_cnt)++;
-					if (*pErr_cnt < NUMBER_OF_CHUNK_ERRORS_TO_SHOW) {
-						local_message("\r Error at byte %d (send:0x%02x, received:0x%02x)                 \n",
-								file_offset+(chunk_size-remain)+i, buff[i], lc3_buff[i]);
-					} else if (*pErr_cnt == NUMBER_OF_CHUNK_ERRORS_TO_SHOW) {
-						local_message("\r Error at byte %d (send:0x%02x, received:0x%02x) (next errors will not be reported)\n",
-								file_offset+(chunk_size-remain)+i, buff[i], lc3_buff[i]);
-					}
-
-				}
-			}
-
-			remain -= bytesRead;
-			local_message("\r%3d%% complete     --  %5lu of %5lu bytes verified      ",
-				       (int)((progress_done+chunk_size-remain)*100/progress_whole), (progress_done+chunk_size-remain), progress_whole);
-			part = min(nbuff_words*2, remain);
+	// Wait some time to allow device to respond
+	Sleep(200);
+	SetLastError(ERROR_SUCCESS);
+	words_part = min(nbuff_words, words_remain);
+	while (words_remain) {
+		if (!ReadFile(hCom, buff, 2*words_part, &bytesRead, NULL)
+				|| bytesRead < 2*words_part){
+			local_message("Read from serial failed (received %lu of %d, error: %lu)\n",
+					bytesRead, 2*words_part, GetLastError());
+			return -1;
 		}
+		for (w=0; w < bytesRead/2; w++) {
+			if (words_done+w % 8 == 0) {
+				printf("\nx%04X:", lc3_word_start+words_done+w);
+			}
+			if ((words_done+w) % 4 == 0) {
+				printf(" ");
+			}
+			printf(" x%02X%02X", buff[w*2], buff[w*2+1]);
+		}
+
+		words_remain -= bytesRead/2;
+		words_done += bytesRead/2;
+		words_part = min(nbuff_words, words_remain);
 	}
 
 	return 0;
