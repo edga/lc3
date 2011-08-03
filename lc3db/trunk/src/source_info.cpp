@@ -160,7 +160,7 @@ static int currentBlockLevel = -1;
  */
 void SourceInfo::start_declaration_block(const char* functionName, int level, uint16_t addresses){
   // All types are hardcoded to int for now, this function doesn't do anything
-  fprintf(stderr, "%*s{ //%s at 0x%04x\n", level*2, "", functionName, addresses);
+  fprintf(stderr, "%*s{  // in %s at 0x%04x\n", level*8, "", functionName, addresses);
   currentBlockLevel = level;
 }
 
@@ -170,7 +170,7 @@ void SourceInfo::start_declaration_block(const char* functionName, int level, ui
  * - address: the machine address where the block ends
  */
 void SourceInfo::finish_declaration_block(const char* functionName, int level, uint16_t addresses){
-  fprintf(stderr, "%*s} //%s at 0x%04x\n", level*2, "", functionName, addresses);
+  fprintf(stderr, "%*s}  // in %s at 0x%04x\n", level*8, "", functionName, addresses);
   assert(level == currentBlockLevel);
   currentBlockLevel--;
 }
@@ -183,11 +183,11 @@ void SourceInfo::finish_declaration_block(const char* functionName, int level, u
  */
 void SourceInfo::add_absolute_variable(VariableKind kind, int typeId, const char* sourceName, const char* assemblerLabel){
   if (kind==FileGlobal) {
-	fprintf(stderr, "T%d %s // at %s\n", typeId, sourceName, assemblerLabel);
+	fprintf(stderr, "T%d %s \t// at %s\n", typeId, sourceName, assemblerLabel);
   } else if (kind==FileStatic) {
-	fprintf(stderr, "static T%d %s // at %s\n", typeId, sourceName, assemblerLabel);
+	fprintf(stderr, "static T%d %s \t// at %s\n", typeId, sourceName, assemblerLabel);
   } else if (kind==FunctionStatic) {
-	fprintf(stderr, "%*sstatic T%d %s // at %s\n", currentBlockLevel*2+2, "", typeId, sourceName, assemblerLabel);
+	fprintf(stderr, "%*sstatic T%d %s \t// at %s\n", currentBlockLevel*8+8, "", typeId, sourceName, assemblerLabel);
   }
 }
 
@@ -200,9 +200,9 @@ void SourceInfo::add_absolute_variable(VariableKind kind, int typeId, const char
  */
 void SourceInfo::add_stack_variable(VariableKind kind, int typeId, const char* sourceName, int frameOffset){
   if (kind==FunctionParameter) {
-	fprintf(stderr, "     param T%d %s // at R5[%d]\n", typeId, sourceName, frameOffset);
+	fprintf(stderr, "     param T%d %s \t// at R5[%d]\n", typeId, sourceName, frameOffset);
   } else if (kind==FunctionLocal) {
-	fprintf(stderr, "%*sT%d %s // at R5[%d]\n", currentBlockLevel*2+2, "", typeId, sourceName, frameOffset);
+	fprintf(stderr, "%*sT%d %s \t// at R5[%d]\n", currentBlockLevel*8+8, "", typeId, sourceName, frameOffset);
   }
 }
 
@@ -213,7 +213,7 @@ void SourceInfo::add_stack_variable(VariableKind kind, int typeId, const char* s
  * - assemblerLabel: the assembler label which points the function start addresses (entry point)
  */
 void SourceInfo::add_function(bool isStatic, int returnTypeId, const char* sourceName, const char* assemblerLabel){
-  fprintf(stderr, "%s%s returns T%d // at %s\n", isStatic?"static ":"", sourceName, returnTypeId, assemblerLabel);
+  fprintf(stderr, "%s%s returns T%d \t// at %s\n", isStatic?"static ":"", sourceName, returnTypeId, assemblerLabel);
 }
 
 

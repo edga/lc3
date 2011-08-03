@@ -120,6 +120,8 @@ int opt_program_only = 0;
 int opt_no_program_check = 0;
 int opt_start_address = -1;
 int arg_chunk_size = 0;
+int arg_dump_start = -1;
+int arg_dump_stop = -1;
 char * arg_program_files[MAX_FILES];
 int arg_files_count;
 int arg_retransmit_retry = 2;
@@ -129,18 +131,25 @@ int arg_baud_rate = DEFAULT_BAUD_RATE;
 int arg_parity = DEFAULT_PARITY;
 
 void usage(const char *progname) {
-	local_message("\nUsage: %s [-p][-n][-c CHUNK_SIZE] [-s BAUD:PARITY:COMPORT] [ [LC3_OBJ_FILES]\n"
+	local_message("\nUsage:\n"
+			"   %s [-p][-n][-c CHUNK_SIZE] [-s BAUD:PARITY:COMPORT] [LC3_OBJ_FILES]\n"
+			"   %s [-c CHUNK_SIZE] [-s BAUD:PARITY:COMPORT] -x LC3_MEMORY_RANGE\n"
 					  "  -p: program only. Don't ask LC3 to start uploaded program,\n"
 					  "      and don't launch terminal.\n"
 					  "  -n: no program check. Don't ask LC3 to send back uploaded program,\n"
-					  "  -c: upload files in chunks instead of whole file at a time,\n"
+					  "  -c: upload files in chunks (given number of bytes) instead of whole file at a time,\n"
 					  "  -s: Change default serial settings (3 colon separated fields)\n"
 					  "      Valid parity codes: (%d: EVENPARITY, %d: MARKPARITY, %d: NOPARITY, %d: ODDPARITY, %d: SPACEPARITY)\n"
 					  "      Default port settings:     -s %d:%d:%s\n"
+					  "  -x: Download and hexdump part of LC3 memory\n"
+					  "      Valid formats of LC3_MEMORY_RANGE are:\n"
+					  "          START_ADDRESS:STOP_ADDRESS (for example: 0x0200:0x02FF)\n"
+					  "          START_ADDRESS+WORD_COUNT (for example: 0x0200+0x100)\n"
 					  ""
 					  "  if LC3_OBJ_FILES are missing programming step is skipped.\n"
 					  "  if -p is missing, the last object file specified is started after upload.\n"
 					  "\n"
+					  ,progname,
 					  ,progname,
 					  EVENPARITY, MARKPARITY, NOPARITY, ODDPARITY, SPACEPARITY,
 					  DEFAULT_BAUD_RATE, DEFAULT_PARITY, DEFAULT_SERIAL_PORT);
@@ -211,12 +220,32 @@ void parse_options(int argc, char **argv){
 				usage_error = 1;
 			}
 			ap +=2;
+		} else if (argv[ap][1] == 'x' && !argv[ap][2]) {
+			// Use atoi (with support for different radix)
+			if (sscanf(argv[ap+1], "%d:%d", &arg_dump_start, &arg_dump_stop) == 2) {
+				// Check range
+				if (arg_dump_stop < arg_dump_start) {
+					local_message("Error: option -x, STOP_ADDRESS can't be smaller then START_ADDRESS\n\n");
+					usage_error = 1;
+				}
+			} else if (sscanf(argv[ap+1], "%d+%d", &arg_dump_start, &arg_dump_stop) == 2) {
+				// Convert second argument from WORD_COUNT to STOP_ADDRESS
+				arg_dump_stop += arg_dump_start-1;
+			} else {
+				local_message("Error: option -x expects pair of natural numbers as LC3_MEMORY_RANGE\n\n");
+				usage_error = 1;
+			}
+			ap +=2;
 		} else {
 			local_message("Error: unrecognized option %s \n\n", argv[ap]);
 			usage_error = 1;
 		}
 	}
 
+	if (arg_dump_start >= 0 && (opt_program_only || opt_no_program_check || argc > ap)) {
+		local_message("Error: \"-x\" can only be used with \"-c\" or \"-s\" \n\n");
+		usage_error = 1;
+	}
 	if (opt_program_only && argc <= ap) {
 		local_message("Error: \"-p\" without files to program doesn't make sense\n\n");
 		usage_error = 1;
@@ -579,6 +608,77 @@ int program_device(HANDLE hCom, const char *program_file) {
 	return 0;
 }
 
+int dump_lc3_memory(HANDLE hCom, int lc3_word_start, int lc3_word_stop, int chunk_size) {
+	const int nbuff_words = 1024;
+	unsigned char buff[nbuff_words*2];
+	DWORD bytesRead;
+	DWORD remain;	// how many bytes of this chunk remaining to send
+	DWORD part;	// how many bytes to send in one go (limited by buffer size and remaining data)
+
+	// Wait some time to allow device to respond
+	Sleep(200);
+	PurgeComm(hCom, PURGE_RXCLEAR);
+
+
+	//// Send Memory Download command:
+	// Header:
+	buff[0] = LC3_CMD_GET_MEM[0];
+	buff[1] = LC3_CMD_GET_MEM[1];
+	// Transmission size: Network order (big-endian) in LC3 words
+	buff[2] = (char)(chunk_size/2 / 256);
+	buff[3] = (char)(chunk_size/2 % 256);
+	// Offset: Network order (big-endian) in LC3 words
+	buff[4] = (char)(lc3_word_start / 256);
+	buff[5] = (char)(lc3_word_start % 256);
+	if (send_serial(hCom, buff, 6) < 6) {
+		return -1;
+	}
+
+	todo: This is just copy paste, please update it with real code :)
+
+	*pErr_cnt = 0;
+	{
+		unsigned char lc3_buff[nbuff_words*2];
+		DWORD lc3_bytesRead;
+		int i;
+
+		// Wait some time to allow device to respond
+		Sleep(200);
+		SetLastError(ERROR_SUCCESS);
+		remain = chunk_size;
+		part = min(nbuff_words*2, remain);
+		while (remain) {
+			if (!ReadFile(hCom, lc3_buff, part, &lc3_bytesRead, NULL)
+					|| lc3_bytesRead < part){
+				local_message("Read from serial failed (received %lu of %d, error: %lu)\n",
+						lc3_bytesRead, part, GetLastError());
+				return -1;
+			}
+			for (i=0; i < bytesRead; i++) {
+				if (buff[i] != lc3_buff[i]) {
+					(*pErr_cnt)++;
+					if (*pErr_cnt < NUMBER_OF_CHUNK_ERRORS_TO_SHOW) {
+						local_message("\r Error at byte %d (send:0x%02x, received:0x%02x)                 \n",
+								file_offset+(chunk_size-remain)+i, buff[i], lc3_buff[i]);
+					} else if (*pErr_cnt == NUMBER_OF_CHUNK_ERRORS_TO_SHOW) {
+						local_message("\r Error at byte %d (send:0x%02x, received:0x%02x) (next errors will not be reported)\n",
+								file_offset+(chunk_size-remain)+i, buff[i], lc3_buff[i]);
+					}
+
+				}
+			}
+
+			remain -= bytesRead;
+			local_message("\r%3d%% complete     --  %5lu of %5lu bytes verified      ",
+				       (int)((progress_done+chunk_size-remain)*100/progress_whole), (progress_done+chunk_size-remain), progress_whole);
+			part = min(nbuff_words*2, remain);
+		}
+	}
+
+	return 0;
+}
+
+
 /******* Serial console **********/
 
 void receiver_thr(void *com) {
@@ -726,7 +826,13 @@ int main(int argc, char *argv[])
 		wait_and_quit();
 	}
 
-	if (arg_files_count == 0) {
+	if (arg_dump_start >= 0) {
+		if (wait_lc3_ready(hCom) == 0) {
+			dump_lc3_memory(hCom, arg_dump_start, arg_dump_stop);
+		}
+		CloseHandle(hCom);
+		return 0;
+	} else if (arg_files_count == 0) {
 		local_message("Upload operation skipped (no obj file specified).\n");
 	} else {
 		for (i=0; i < arg_files_count; i++) {
