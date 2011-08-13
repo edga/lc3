@@ -3,7 +3,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;	void printf(const char *format, ...)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-LC3_GFLAG printf LC3_GFLAG .FILL lc3_printf
+LC3_GFLAG lc3_printf LC3_GFLAG .FILL printf
 
 PRINTF_PERCENT .FILL -37
 PRINTF_C .FILL -99
@@ -33,7 +33,7 @@ PRINTF_MINUS .FILL 45
 PRINTF_BUF .BLKW 18
  
 
-lc3_printf
+printf
 ADD R6, R6, #-2
 STR R7, R6, #0		;return address
 ADD R6, R6, #-1

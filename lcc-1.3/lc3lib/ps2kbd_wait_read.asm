@@ -1,10 +1,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;kb_wait_read;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; short kb_wait_read();
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-LC3_GFLAG ps2kbd_wait_read LC3_GFLAG .FILL lc3_ps2kbd_wait_read
+LC3_GFLAG lc3_ps2kbd_wait_read LC3_GFLAG .FILL ps2kbd_wait_read
 kwr_KB_S .FILL xfe18
         
-lc3_ps2kbd_wait_read
+ps2kbd_wait_read
 ADD R6, R6, #-1    ; reserve place for return val 
 
 STR R7, R6, #-1    ; push R7

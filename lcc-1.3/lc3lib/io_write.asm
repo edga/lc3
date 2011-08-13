@@ -1,8 +1,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;io_write;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; void io_write(unsigned short io_addr, short val);
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-LC3_GFLAG io_write LC3_GFLAG .FILL lc3_io_write
-lc3_io_write
+LC3_GFLAG lc3_io_write LC3_GFLAG .FILL io_write
+io_write
 ; I know that it is void function, but compiler is a bit stupid,
 ; and the caller will try to pop return value anyway
 ADD R6, R6, #-1    ; reserve place for return value 

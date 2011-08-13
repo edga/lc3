@@ -1,9 +1,9 @@
 
 
 ; void putchar(char)
-LC3_GFLAG putchar LC3_GFLAG .FILL lc3_putchar
+LC3_GFLAG lc3_putchar LC3_GFLAG .FILL putchar
 
-lc3_putchar
+putchar
 
 STR R7, R6, #-3
 STR R0, R6, #-2

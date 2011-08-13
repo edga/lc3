@@ -705,7 +705,7 @@ static void emit2(Node p) {
 			i = 0; /* count things what has to be poped out of the stack (arguments, return val, pRETB) */
 
 			if (specific(LEFT_CHILD(p)->op) == ADDRG+P) { // 
-				print(".LC3GLOBAL %s 0\nLDR R0, R0, #0\n", (LEFT_CHILD(p)->syms[0]->x.name));
+				print(".LC3GLOBAL lc3_%s 0\nLDR R0, R0, #0\n", (LEFT_CHILD(p)->syms[0]->x.name));
 			}
 
 			print("jsrr R0\n");
@@ -1338,13 +1338,18 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
 	framesize = maxoffset+1;
 
+	// Todo: Might indroduce extra code block to mark the start and the end of the function
+	//       The '{' and '}' of the function are not enougth, because they are emited after
+	//       prolog/before epilog respectively
 	print(";;;;;;;;;;;;;;;;;;;;;;;;;;;;%s;;;;;;;;;;;;;;;;;;;;;;;;;;;;\n", f->name);
 	//	printf(";test: function:%s, %s\n", f->name, f->x.name);
 	//if(strcmp("main",f->x.name)==0) {
 	//	print("%s\n", f->x.name);
 	//} else {
-		print("LC3_GFLAG %s LC3_GFLAG .FILL lc3_%s\n", f->name, f->x.name);
-		print("lc3_%s\n", f->x.name);
+		//print("LC3_GFLAG %s LC3_GFLAG .FILL lc3_%s\n", f->name, f->x.name);
+		//print("lc3_%s\n", f->x.name);
+		print("LC3_GFLAG lc3_%s LC3_GFLAG .FILL %s\n", f->x.name, f->name);
+		print("%s\n", f->name);
 	//}
 
 	lc3_addimm(6,6,-2);//allocate space for return val

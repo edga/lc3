@@ -1,8 +1,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;io_read;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; short io_read(unsigned short io_addr);
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-LC3_GFLAG io_read LC3_GFLAG .FILL lc3_io_read
-lc3_io_read
+LC3_GFLAG lc3_io_read LC3_GFLAG .FILL io_read
+io_read
 ADD R6, R6, #-1    ; reserve place for return val 
 
 STR R7, R6, #-1    ; push R7

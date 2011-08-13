@@ -4,7 +4,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;	void printf(const char *format, ...)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-LC3_GFLAG printf LC3_GFLAG .FILL lc3_printf
+LC3_GFLAG lc3_printf LC3_GFLAG .FILL printf
 
 PRINTF_PERCENT .FILL -37
 PRINTF_C .FILL -99
@@ -34,7 +34,7 @@ PRINTF_MINUS .FILL 45
 PRINTF_BUF .BLKW 18
  
 
-lc3_printf
+printf
 ADD R6, R6, #-2
 STR R7, R6, #0		;return address
 ADD R6, R6, #-1
@@ -254,7 +254,7 @@ RET
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
 ;	void scanf(const char *format, ...) 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
-LC3_GFLAG scanf LC3_GFLAG .FILL lc3_scanf
+LC3_GFLAG lc3_scanf LC3_GFLAG .FILL scanf
 
 SCANF_PERCENT .FILL -37
 SCANF_C .FILL -99
@@ -265,7 +265,7 @@ SCANF_9 .FILL -57
 SCANF_MINUS .FILL -45  
 SCANF_BUF .BLKW 6
  
-lc3_scanf 
+scanf 
 ADD R6, R6, #-2 
 STR R7, R6, #0 
  
@@ -517,9 +517,9 @@ RET
  
 .global getchar
 ; char getchar(void)
-LC3_GFLAG getchar LC3_GFLAG .FILL lc3_getchar
+LC3_GFLAG lc3_getchar LC3_GFLAG .FILL getchar
 
-lc3_getchar
+getchar
 
 STR R7, R6, #-3
 STR R0, R6, #-2
@@ -533,9 +533,9 @@ RET
 
 .global putchar
 ; void putchar(char)
-LC3_GFLAG putchar LC3_GFLAG .FILL lc3_putchar
+LC3_GFLAG lc3_putchar LC3_GFLAG .FILL putchar
 
-lc3_putchar
+putchar
 
 STR R7, R6, #-3
 STR R0, R6, #-2

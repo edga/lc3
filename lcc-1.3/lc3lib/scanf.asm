@@ -2,7 +2,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
 ;	void scanf(const char *format, ...) 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; 
-LC3_GFLAG scanf LC3_GFLAG .FILL lc3_scanf
+LC3_GFLAG lc3_scanf LC3_GFLAG .FILL scanf
 
 SCANF_PERCENT .FILL -37
 SCANF_C .FILL -99
@@ -13,7 +13,7 @@ SCANF_9 .FILL -57
 SCANF_MINUS .FILL -45  
 SCANF_BUF .BLKW 6
  
-lc3_scanf 
+scanf 
 ADD R6, R6, #-2 
 STR R7, R6, #0 
  

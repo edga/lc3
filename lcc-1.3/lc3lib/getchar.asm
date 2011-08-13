@@ -1,8 +1,8 @@
 
 ; char getchar(void)
-LC3_GFLAG getchar LC3_GFLAG .FILL lc3_getchar
+LC3_GFLAG lc3_getchar LC3_GFLAG .FILL getchar
 
-lc3_getchar
+getchar
 
 STR R7, R6, #-3
 STR R0, R6, #-2
