@@ -22,8 +22,10 @@
 
 #include <string>
 #include <vector>
+#include <list>
 #include <map>
 #include <stdint.h>
+#include <string.h>
 
 // External source location representation
 struct SourceLocation
@@ -51,6 +53,42 @@ enum VariableKind {
 	FunctionParameter
 };
 
+struct VariableInfo{
+  const char* name;
+  VariableKind kind;
+  int typeId;
+  bool isAddressAbsolute;
+  int address;	// LC3 absolute address if isAddressAbsolute; else frame (R5) offset
+  VariableInfo(const char*_name, VariableKind _kind, int _typeId, bool _isAddressAbsolute, int _address) :
+    name(strdup(_name)), kind(_kind), typeId(_typeId), isAddressAbsolute(_isAddressAbsolute), address(_address) {}
+//  VariableInfo(const VariableInfo & v) :
+//    name(v.name), kind(v.kind), typeId(v.typeId), isAddressAbsolute(v.isAddressAbsolute), address(v.address) {}
+};
+
+struct SourceBlock;
+struct FunctionInfo{
+  const char* name;
+  bool isStatic;
+  int returnTypeId;
+  uint16_t entry;
+  SourceBlock *block;
+  std::list<VariableInfo*> args;
+  FunctionInfo(bool _isStatic, int _returnTypeId, const char *_name, uint16_t _entry) :
+    name(strdup(_name)), isStatic(_isStatic), returnTypeId(_returnTypeId), entry(_entry),
+    block(NULL) {}
+}; 
+
+struct SourceBlock{
+  FunctionInfo *function;
+  int level;
+  SourceBlock *parent;
+  uint16_t start;
+  uint16_t end;
+  std::list<VariableInfo*> variables;
+  SourceBlock(int _level, SourceBlock *_parent, uint16_t _start, FunctionInfo *_function) :
+    level(_level), start(_start), parent(_parent), function(_function),
+	end(0) {}
+};
 
 class SourceInfo {
 public:
@@ -71,6 +109,12 @@ public:
   SourceLocation find_source_location_absolute(uint16_t address);
   uint16_t find_line_start_address(std::string fileName, int lineNo);
   std::map<std::string, uint16_t> symbol;
+  
+  // Todo: FixMe: Handle FileStatic variables per each source file
+  std::map<std::string, VariableInfo*> globalVariables;
+  std::map<uint16_t, SourceBlock*> sourceBlocks;
+  SourceBlock* find_source_block(uint16_t address);
+  VariableInfo* find_variable(uint16_t scopeAddress, const char* name);
 
 private:
   _SourceLocation find_source_location(uint16_t address); 
@@ -81,5 +125,6 @@ private:
   std::vector<std::string> filePaths;	// internalFileID => full path
   std::vector<std::vector<uint16_t> > startAddresses; // source file location => lc3 address (addresses[fileId][lineNo])
 };
+
 
 #endif

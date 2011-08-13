@@ -54,6 +54,21 @@ namespace std {
   typedef basic_string<char, ichar_traits, allocator<char> > istring;
 }
 
+struct DisplayInfo{
+  int id;
+  bool isActive;
+  const char* name;
+  uint16_t address;
+  int typeId;
+  DisplayInfo(int _id, uint16_t _address, const char* _name, int _typeId) :
+    id(_id), address(_address), name(_name), typeId(_typeId),
+    isActive(true) {}
+};
+typedef std::vector<DisplayInfo>::iterator DisplayInfoIterator;
+int lastDisplay = 0;
+std::vector<DisplayInfo> displays;
+
+
 const char * HELP =
 "Commands: - shortcuts shown in ()\n"
 " compile <filename.asm>\n"
@@ -67,6 +82,9 @@ const char * HELP =
 
 " continue (c)\n"
 "   Executions instructions until halt.\n\n"
+
+" display [expression]\n"
+"   Adds expressions to automatic display list. The expressions will be printed on each stop.\n\n"
 
 " disassemble (dasm) <start> <end>\n"
 "   Disassemble insructions from address <start> to <end>.\n\n"
@@ -315,6 +333,66 @@ void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, b
   }
 }
 
+void set_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, std::string valueString){
+  uint16_t addr = v->address + (v->isAddressAbsolute ? 0 : cpu.R[5]);
+
+  try {
+    int16_t val = lexical_cast<int16_t>(valueString);
+    mem[addr] = val;
+  } catch(bad_lexical_cast &e) {
+    fprintf(stderr, "Can't set \"%s\" to \"%s\", wrong value (only single value integers supported)\n", v->name, valueString.c_str());
+  }
+
+}
+void print_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
+  uint16_t addr = v->address + (v->isAddressAbsolute ? 0 : cpu.R[5]);
+  printf("%s = 0x%.4x %d\n", v->name,
+      mem[addr] & 0xFFFF,
+      mem[addr] + 0);
+}
+
+void print_locals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
+  int cnt = 0;
+  SourceBlock *sb = src_info.find_source_block(cpu.PC);
+  while(sb) {
+    std::list<VariableInfo*>::const_iterator it;
+    for (it=sb->variables.begin(); it != sb->variables.end(); it++) {
+      print_variable(*it, cpu, mem, src_info);
+      cnt++;
+    }
+    sb = sb->parent;
+  }
+  if (cnt==0) {
+    printf("No locals.\n");
+  } 
+}
+void print_args(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
+  int cnt = 0;
+  SourceBlock *sb = src_info.find_source_block(cpu.PC);
+  if(sb && sb->function) {
+    std::list<VariableInfo*>::const_iterator it;
+    FunctionInfo *f = sb->function;
+    for (it=f->args.begin(); it != f->args.end(); it++) {
+      print_variable(*it, cpu, mem, src_info);
+      cnt++;
+    }
+  }
+  if (cnt==0) {
+    printf("No args.\n");
+  } 
+}
+void print_globals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
+  int cnt = 0;
+  std::map<std::string, VariableInfo*>::const_iterator it;
+  for (it=src_info.globalVariables.begin(); it != src_info.globalVariables.end(); it++) {
+    print_variable(it->second, cpu, mem, src_info);
+    cnt++;
+  }
+  if (cnt==0) {
+    printf("No global variables.\n");
+  } 
+}
+
 int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	     bool gui_mode, bool quiet_mode, const char *exec_file)
 {
@@ -439,7 +517,40 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	mem[off2] = off;
       }
     } else if (cmdstr == "set") {
-      fprintf(stderr, "\"set\" command is not supported yet (try using \"force\")\n");
+      incmd >> param1;
+
+      if (param1 == "variable") {
+	param1.clear();
+	incmd >> param1 >> param2;
+	if (param2 != "=") {
+	  fprintf(stderr, "\"set\" command is only supported for setting simple variables. Syntax:\n"
+	      "   set variable VARIABLE_NAME = NEW_VALUE\n"
+	      "See also \"force\" command for setting of registers and assembler level labels\n");
+	  continue;
+	}
+	incmd >> param2;
+
+	
+	VariableInfo* v = src_info.find_variable(cpu.PC, param1.c_str());
+	if (v) {
+	  set_variable(v, cpu, mem, src_info, param2);
+	} else {
+	  int16_t value = lexical_cast<int16_t>(param2);
+
+	  if(mytable.count(param1.c_str()))
+	    *mytable[param1.c_str()] = value;
+	  else if(src_info.symbol.count(param1)) {
+	    uint16_t addr = src_info.symbol[param1];
+	    mem[addr] = value;
+	  } else {
+	    fprintf(stderr, "variable \"%s\" not found\n", param1.c_str());
+	  }
+	}
+      } else {
+	fprintf(stderr, "\"set\" command is only supported for setting simple variables. Syntax:\n"
+	    "   set variable VARIABLE_NAME = NEW_VALUE\n"
+	    "See also \"force\" command for setting of registers and assembler level labels\n");
+      }
     } else if (cmdstr == "dump" || cmdstr == "d"  || cmdstr == "x") {
       if (cmdstr == "x") {
 	incmd >> param2 >> param1;
@@ -520,7 +631,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	cpu.decode(IR);
       }
     } else if (cmdstr == "help" || cmdstr == "h") {
-      printf("%s", HELP);
+#warning HELP is disabled for developement. Enable it before a release!
+      //printf("%s", HELP);
     } else if (cmdstr == "load" || cmdstr == "l" || cmdstr == "file") {
       incmd >> param1;
       uint16_t entry;
@@ -562,7 +674,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	instructions_to_run = repeat;
       } else {
 	if (repeat != 1) {
-	  fprintf(stderr, "step argument is currently not supported\n");
+	  fprintf(stderr, "step argument is currently not supported for C language\n");
 	}
 	limit_execution_range_start = line.firstAddr;
 	limit_execution_range_end = line.lastAddr;
@@ -632,10 +744,38 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       }
 	
 
-    } else if (cmdstr == "print" || cmdstr == "p" || cmdstr == "output") {
+    } else if (cmdstr == "display" || cmdstr == "disp") {
+      // TODO: FixMe: Add way to delete/disable displays
+      // TODO: FixMe: "info dispay" command:
+      // 		Num Enb Expression
+      // 		1:   y  VariableName
+      //
       incmd >> param1;
 
-      if (mytable.count(param1.c_str())) {
+      if (param1.empty()) {
+	// show display list
+	DisplayInfoIterator it;
+	for (it=displays.begin(); it != displays.end(); it++) {
+	  printf("%d: %s = %d\n", it->id, it->name, mem[it->address]+0);
+	}
+      } else {
+	// add to display
+	// TODO: FixMe: handle special names (registers) from mytable
+	if (src_info.symbol.count(param1)) {
+	  uint16_t addr = src_info.symbol[param1];
+	  displays.push_back(DisplayInfo(++lastDisplay, addr, strdup(param1.c_str()), 0));
+	} else {
+	  off = lexical_cast<uint16_t>(param1);
+	  displays.push_back(DisplayInfo(++lastDisplay, off, strdup(param1.c_str()), 0));
+	}
+      }
+    } else if (cmdstr == "print" || cmdstr == "p" || cmdstr == "output") {
+      incmd >> param1;
+      VariableInfo* v = src_info.find_variable(cpu.PC, param1.c_str());
+
+      if (v) {
+	print_variable(v, cpu, mem, src_info);
+      } else if (mytable.count(param1.c_str())) {
 	printf("%s = %.4x (%d)\n", param1.c_str(),
 	       *mytable[param1.c_str()] & 0xFFFF,
 	       *mytable[param1.c_str()] & 0xFFFF);
@@ -715,8 +855,36 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       }
     } else if (cmdstr == "info") {
       incmd >> param1;
+#warning fake command for developement. Remove it before a release!
+      if (param1 == "all") {
+	incmd >> param2;
+	uint16_t scope, backup;
+	try {
+	  scope = lexical_cast<uint16_t>(param2) & 0xffff;
+	} catch(bad_lexical_cast &e) {
+	  scope = cpu.PC;
+	}
+	backup = cpu.PC;
+	cpu.PC = scope;
+
+	printf("Locals:\n");	
+	print_locals(cpu, mem, src_info);
+	printf("Args:\n");
+	print_args(cpu, mem, src_info);
+	printf("Variables:\n");
+	print_globals(cpu, mem, src_info);
+
+	cpu.PC = backup;
+      }
       if (param1 == "breakpoints" || param1 == "b") {
 	breakpoints.showInfo();
+	// FixMe: Todo: add context, to use with "frame" commands, and use it as replacement of cpu.PC
+      } else if (param1 == "locals") {
+	print_locals(cpu, mem, src_info);
+      } else if (param1 == "args") {
+	print_args(cpu, mem, src_info);
+      } else if (param1 == "variables") {
+	print_globals(cpu, mem, src_info);
       }
     } else {
       printf("Bad command `%s'\nTry using the `help' command.\n", cmd);

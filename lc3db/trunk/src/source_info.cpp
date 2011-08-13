@@ -24,6 +24,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <assert.h>
+#include <stack>
+#include <algorithm>
 #include "source_info.hpp"
 
 // Internal source locations
@@ -152,16 +154,26 @@ void SourceInfo::add_type(int typeId, const char* typeDescriptor){
   // All types are hardcoded to int for now, this function doesn't do anything
 }
 
-static int currentBlockLevel = -1;
+static FunctionInfo *currentFunction = NULL;
+static SourceBlock *currentBlock = NULL;
+#define currentBlockLevel (currentBlock ? currentBlock->level : -1)
+static std::stack<SourceBlock*> openedBlocks;
 /* Start a variable declaration block (a new local scope for variables, left brace symbol '{' in C)
  * - functionName: name of C function to which this block belongs
  * - level: the level for nested scopes (0 is the block for the whole function)
  * - address: the machine address where the block starts
  */
-void SourceInfo::start_declaration_block(const char* functionName, int level, uint16_t addresses){
+void SourceInfo::start_declaration_block(const char* functionName, int level, uint16_t address){
   // All types are hardcoded to int for now, this function doesn't do anything
-  fprintf(stderr, "%*s{  // in %s at 0x%04x\n", level*8, "", functionName, addresses);
-  currentBlockLevel = level;
+  fprintf(stderr, "%*s{  // in %s at 0x%04x\n", level*8, "", functionName, address);
+  assert( (!currentBlock && !level) ||
+     	 (level==(currentBlock->level+1)) );
+  currentBlock = new SourceBlock(level, currentBlock, address, currentFunction);
+  openedBlocks.push(currentBlock);
+  if (level == 0) {
+    assert(currentFunction);
+    currentFunction->block = currentBlock;
+  }
 }
 
 /* Finish a variable declaration block (last created local scope for variables, right brace symbol '}' in C)
@@ -169,17 +181,24 @@ void SourceInfo::start_declaration_block(const char* functionName, int level, ui
  * - level: the level for nested scopes (0 is the block for the whole function)
  * - address: the machine address where the block ends
  */
-void SourceInfo::finish_declaration_block(const char* functionName, int level, uint16_t addresses){
-  fprintf(stderr, "%*s}  // in %s at 0x%04x\n", level*8, "", functionName, addresses);
-  assert(level == currentBlockLevel);
-  currentBlockLevel--;
+void SourceInfo::finish_declaration_block(const char* functionName, int level, uint16_t address){
+  fprintf(stderr, "%*s}  // in %s at 0x%04x\n", level*8, "", functionName, address);
+  assert( currentBlock && (level==(currentBlock->level)) );
+  if (level != 0 && currentBlock->variables.empty()) {
+    delete currentBlock;
+  } else {
+    currentBlock->end = address;
+    sourceBlocks[currentBlock->start] = currentBlock;
+  }
+  openedBlocks.pop();
+  currentBlock = openedBlocks.empty() ? NULL : openedBlocks.top();
 }
 
 /* Add information about the absolute variable (not stack frame relative):
  * - kind: the kind of variable, to distinguish between FileGlobal, FileStatic and FunctionStatic   
  * - typeId: the variable type (must be previously registered by calling add_type())
  * - sourceName: the name of variable in the C source (as seen by the user)
- * - assemblerLabel: the assembler label which points the variable start addresses
+ * - assemblerLabel: the assembler label which points the variable start address
  */
 void SourceInfo::add_absolute_variable(VariableKind kind, int typeId, const char* sourceName, const char* assemblerLabel){
   if (kind==FileGlobal) {
@@ -188,6 +207,19 @@ void SourceInfo::add_absolute_variable(VariableKind kind, int typeId, const char
 	fprintf(stderr, "static T%d %s \t// at %s\n", typeId, sourceName, assemblerLabel);
   } else if (kind==FunctionStatic) {
 	fprintf(stderr, "%*sstatic T%d %s \t// at %s\n", currentBlockLevel*8+8, "", typeId, sourceName, assemblerLabel);
+  }
+
+  assert(!(currentBlock && (kind==FileGlobal || kind==FileStatic)));
+  assert(!(!currentBlock && kind==FunctionStatic));
+  assert(symbol.count(assemblerLabel)==1);
+
+  VariableInfo *v = new VariableInfo(sourceName, kind, typeId, true, symbol[assemblerLabel]);
+
+  if (kind==FunctionStatic) {
+    currentBlock->variables.push_back(v);
+  } else {
+    // Todo: FixMe: Handle FileStatic variables per each source file
+    globalVariables[v->name] = v;
   }
 }
 
@@ -204,19 +236,82 @@ void SourceInfo::add_stack_variable(VariableKind kind, int typeId, const char* s
   } else if (kind==FunctionLocal) {
 	fprintf(stderr, "%*sT%d %s \t// at R5[%d]\n", currentBlockLevel*8+8, "", typeId, sourceName, frameOffset);
   }
+
+  VariableInfo *v = new VariableInfo(sourceName, kind, typeId, false, frameOffset);
+  if (kind==FunctionParameter) {
+    assert(currentFunction);
+    currentFunction->args.push_back(v);
+  } else {
+    assert(currentBlock);
+    currentBlock->variables.push_back(v);
+  }
 }
 
 /* Add information about the function:
  * - isStatic: the kind of the function, to distinguish between static and global
  * - returnTypeId: the type of return value (must be previously registered by calling add_type())
  * - sourceName: the name of function in the C source (as seen by the user)
- * - assemblerLabel: the assembler label which points the function start addresses (entry point)
+ * - assemblerLabel: the assembler label which points the function start address (entry point)
  */
 void SourceInfo::add_function(bool isStatic, int returnTypeId, const char* sourceName, const char* assemblerLabel){
   fprintf(stderr, "%s%s returns T%d \t// at %s\n", isStatic?"static ":"", sourceName, returnTypeId, assemblerLabel);
+
+  assert(symbol.count(assemblerLabel)==1);
+  currentFunction = new FunctionInfo(isStatic, returnTypeId, sourceName, symbol[assemblerLabel]);
+}
+
+SourceBlock* SourceInfo::find_source_block(uint16_t address){
+  std::map<uint16_t, SourceBlock*>::const_iterator it;
+
+  it = sourceBlocks.upper_bound(address);
+  if (it != sourceBlocks.begin()) {
+    it--;	// Find the largest block where block.start <= address
+    SourceBlock *sb = it->second;
+    while(sb) {
+      if (
+	address >= sb->start &&
+	address <= sb->end) {
+	return sb;
+      }
+      sb = sb->parent;
+    }
+  }
+
+  return NULL;
 }
 
 
+VariableInfo* SourceInfo::find_variable(uint16_t scopeAddress, const char* name){
+  SourceBlock* scope = find_source_block(scopeAddress);
+  if (scope) {
+    std::list<VariableInfo*>::const_iterator it;
+    FunctionInfo* function = scope->function;
+    
+    // Try Locals, than arguments, than globals
+    while(scope) {
+      for (it=scope->variables.begin(); it != scope->variables.end(); it++) {
+	if (strcmp((*it)->name, name)==0){
+	  return *it;
+	}
+      }
+      scope = scope->parent;
+    }
+    
+    // Try arguments: 
+    for (it=function->args.begin(); it != function->args.end(); it++) {
+      if (strcmp((*it)->name, name)==0){
+	return *it;
+      }
+    }
+    
+    // Try globals: 
+    if (globalVariables.count(name)) {
+      return globalVariables[name];
+    }
+  }
+
+  return NULL;
+}
 
 uint16_t SourceInfo::find_line_start_address(std::string fileName, int lineNo) 
 {
