@@ -732,9 +732,10 @@ static void emit2(Node p) {
 extern void dumptree(Node p);
 /***********Handles spilling a register*********************************/
 /*does it without telling the back end to allocate another register*/
+#if 0
 		case INDIR+U: case INDIR+I: case INDIR+P:
 			if( specific(LEFT_CHILD(p)->op) == VREG+ P) {
-				if (0) {
+				{
 					FILE * f = stderr;
 					stderr = stdout;
 					fprint(stderr, "\n; Warning: INDIR+U/I/P:\t");
@@ -744,7 +745,7 @@ extern void dumptree(Node p);
 				}
 				break;
 			}
-			if (0) {
+			{
 				FILE * f = stderr;
 				stderr = stdout;
 
@@ -754,10 +755,12 @@ extern void dumptree(Node p);
 				stderr = f;
 			}
 			break;
+#endif
 
 		case ASGN+U: case ASGN+I: case ASGN+P:
 			if( specific(LEFT_CHILD(p)->op) == VREG+ P) {
-				if (0) {
+#if 0
+				{
 					FILE * f = stderr;
 					stderr = stdout;
 					fprintf(stderr, "\n; Warning: ASGN+U/I/P:\t");
@@ -766,6 +769,9 @@ extern void dumptree(Node p);
 							getregnum(RIGHT_CHILD(p)));
 					stderr = f;
 				}
+#else
+				print("; Warning: ASGN+U/I/P\n");
+#endif
 				break;
 			}
 			print("; <spilling %s>\n",LEFT_CHILD(p)->syms[0]->x.name);

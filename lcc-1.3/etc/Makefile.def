@@ -46,7 +46,7 @@ SED = __SED__
 MAKE = __MAKE__
 AR = __AR__
 RANLIB = __RANLIB__
-LCCDIR = __INSTALL_DIR__
+LCCDIR = __INSTALL_DIR____PATH_SEP__bin
 BASEDIR = __BASE_DIR__
 PATHSEP = __PATH_SEP__
 # End of configuration block.
