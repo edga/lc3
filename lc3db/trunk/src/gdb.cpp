@@ -69,6 +69,26 @@ int lastDisplay = 0;
 std::vector<DisplayInfo> displays;
 
 
+struct FrameInfo {
+  int id;
+  uint16_t scope;
+  uint16_t framePointer;
+  FunctionInfo *function;
+  char* sourceLocation;
+  FrameInfo(int _id, uint16_t _scope, uint16_t _framePointer, FunctionInfo* _function, const char* _sourceLocation):
+  	id(_id), scope(_scope), framePointer(_framePointer), function(_function), sourceLocation(strdup(_sourceLocation)) {}
+  ~FrameInfo() { free(sourceLocation); }
+};
+
+struct BacktraceInfo {
+  uint16_t fromPC;
+  std::vector<FrameInfo*> frames;
+};
+
+static BacktraceInfo backtrace;
+static std::vector<FrameInfo*>::iterator selected_frame=backtrace.frames.end();
+int selected_frame_id = -1;
+
 const char * HELP =
 "Commands: - shortcuts shown in ()\n"
 " compile <filename.asm>\n"
@@ -76,6 +96,9 @@ const char * HELP =
 
 " tty <terminal_device>\n"
 "   Use pseudoterminal instead of stdin/stdout.\n\n"
+
+" backtrace (bt) (where)\n"
+"   Show the backtrace (function call stack).\n\n"
 
 " break (b) <addr|sym>\n"
 "   Set breakpoint at address <addr> or at the label indicated by sym.\n\n"
@@ -98,11 +121,36 @@ const char * HELP =
 " force (f) <symbol> <value>\n"
 "   Sets the data represented by symbol to value\n\n"
 
+" frame [<number>]\n"
+"   Show the currently selected frame (of function call stack). Or frame with given number.\n\n"
+
+" down [<number>]\n"
+"   Select the frame below.\n\n"
+
+" up [<number>]\n"
+"   Select the frame above.\n\n"
+
+
+" info args\n"
+"   Show the arguments in the current scope (see backtrace/frame/up/down commands)\n\n"
+
+" info breakpoint\n"
+"   Show all the breakpoints\n\n"
+
+" info locals\n"
+"   Show the local variables in the current scope (see backtrace/frame/up/down commands)\n\n"
+
+" info variables\n"
+"   Show the global scoped variables (also file static)\n\n"
+
 " load (l) <filename.obj>\n"
 "   Loads a file named filename.obj. It will also attempt to read a debug\n"
 "   named filename.dbg.  The PC will be set to where the file was loaded.\n\n"
 
 " next (n)\n"
+"   Steps over the next source line (useful to skip the function calls)\n\n"
+
+" nexti (ni)\n"
 "   Steps over the next instruction (useful for TRAP and JSR commands)\n\n"
 
 " print (p) <data>\n"
@@ -110,9 +158,15 @@ const char * HELP =
 "   data.  Use \"print all\" to see contents of registers.\n\n"
 
 " run\n"
-"   Initializes the machines and runs the operating system.\n\n"
+"   Initializes the machine and runs the operating system.\n\n"
+
+" set variable <varname> = <new_value>\n"
+"   Command is only supported for setting simple variables.\n\n"
 
 " step (s) [num]\n"
+"   Executes the next num steps (line changes of the source).\n\n"
+
+" stepi (si) [num]\n"
 "   Executes the next num instruction.\n\n"
 
 " quit (q) exit\n"
@@ -314,22 +368,25 @@ void sigproc(int sig)
   // TODO: make proper synchronization to avoid race conditions
 }
 
-void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, bool gui_mode, bool quiet_mode)
+void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, bool gui_mode, bool quiet_mode, uint16_t scope=0)
 {
+  if (scope==0) {
+    scope = cpu.PC;
+  }
   if (gui_mode) {
-    SourceLocation sl = src_info.find_source_location_absolute(cpu.PC);
+    SourceLocation sl = src_info.find_source_location_absolute(scope);
     if (sl.lineNo > 0) {
       printf(MARKER "%s:%d:0:%s:0x%.4x\n",
-          //mem.debug[cpu.PC].c_str(), cpu.PC & 0xFFFF);
+          //mem.debug[scope].c_str(), scope & 0xFFFF);
           sl.fileName, sl.lineNo,
-          (sl.isHLLSource && cpu.PC > sl.firstAddr) ? "middle" : "beg",
-              cpu.PC & 0xFFFF);
+          (sl.isHLLSource && scope > sl.firstAddr) ? "middle" : "beg",
+              scope & 0xFFFF);
     } else {
-      printf("%.4x in <unknown>\n", cpu.PC & 0xFFFF);
+      printf("%.4x in <unknown>\n", scope & 0xFFFF);
     }
   } else if (!quiet_mode) {
-    printf("0x%.4x: %.4x: ", cpu.PC & 0xFFFF, mem[cpu.PC] & 0xFFFF);
-    cpu.decode(mem[cpu.PC]);
+    printf("0x%.4x: %.4x: ", scope & 0xFFFF, mem[scope] & 0xFFFF);
+    cpu.decode(mem[scope]);
   }
 }
 
@@ -344,16 +401,19 @@ void set_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_i
   }
 
 }
-void print_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
+void print_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, bool compressed=false){
   uint16_t addr = v->address + (v->isAddressAbsolute ? 0 : cpu.R[5]);
-  printf("%s = 0x%.4x %d\n", v->name,
+  const char *fmt = compressed ? "%s=0x%.4x %d" : "%s = 0x%.4x %d\n";
+  printf(fmt, v->name,
       mem[addr] & 0xFFFF,
       mem[addr] + 0);
 }
-
-void print_locals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
+void print_locals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, uint16_t scope=0){
   int cnt = 0;
-  SourceBlock *sb = src_info.find_source_block(cpu.PC);
+  if (scope==0) {
+    scope = cpu.PC;
+  }
+  SourceBlock *sb = src_info.find_source_block(scope);
   while(sb) {
     std::list<VariableInfo*>::const_iterator it;
     for (it=sb->variables.begin(); it != sb->variables.end(); it++) {
@@ -366,9 +426,12 @@ void print_locals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
     printf("No locals.\n");
   } 
 }
-void print_args(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
+void print_args(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, uint16_t scope=0){
   int cnt = 0;
-  SourceBlock *sb = src_info.find_source_block(cpu.PC);
+  if (scope==0) {
+    scope = cpu.PC;
+  }
+  SourceBlock *sb = src_info.find_source_block(scope);
   if(sb && sb->function) {
     std::list<VariableInfo*>::const_iterator it;
     FunctionInfo *f = sb->function;
@@ -381,7 +444,7 @@ void print_args(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
     printf("No args.\n");
   } 
 }
-void print_globals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
+void print_globals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, uint16_t scope=0){
   int cnt = 0;
   std::map<std::string, VariableInfo*>::const_iterator it;
   for (it=src_info.globalVariables.begin(); it != src_info.globalVariables.end(); it++) {
@@ -391,6 +454,69 @@ void print_globals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
   if (cnt==0) {
     printf("No global variables.\n");
   } 
+}
+
+void update_backtrace(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
+  static char buff[512];
+
+  if (backtrace.fromPC != cpu.PC) {
+    // remove old
+    for (int i=0; i < backtrace.frames.size(); i++) {
+      delete backtrace.frames[i];
+    }
+    backtrace.frames.clear();
+
+    // create new
+    backtrace.fromPC = cpu.PC;
+    uint16_t scope = cpu.PC;
+    uint16_t framePointer = (uint16_t)cpu.R[5];
+    int cnt = 0;
+    SourceBlock *sb;
+
+    do {
+      sb = src_info.find_source_block(scope);
+      if(!sb || !sb->function) {
+	break;
+      }
+
+      SourceLocation sl = src_info.find_source_location_short(scope);
+      if (sl.lineNo > 0) {
+	snprintf(buff, sizeof(buff), "at %s:%d", sl.fileName, sl.lineNo);
+      } else {
+	snprintf(buff, sizeof(buff), "<unknown source location>");
+      }
+
+      backtrace.frames.push_back(new FrameInfo(cnt, scope, framePointer, sb->function, buff));  
+
+      // calculate new frame
+      cnt++;
+      scope = mem[framePointer+2] & 0xFFFF;
+      framePointer = mem[framePointer+1] & 0xFFFF;
+    } while (strcmp(sb->function->name, "main")!=0);
+
+    selected_frame = backtrace.frames.begin();
+    selected_frame_id = 0;
+  }
+}
+
+void print_frame(FrameInfo *frame, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info) {
+  FunctionInfo* function = frame->function;
+
+  // "#1  0x08048495 in functionABC (arg_a=1, arg_b=97 'a', arg_c=0x8048650 "Hello") at debug_info.c:23\n"
+  printf("#%d  ", frame->id);
+  if (frame->id) {
+    printf("0x%04x ", frame->scope);
+  }
+  printf("%s (", function->name);
+
+  std::list<VariableInfo*>::const_iterator it;
+  for (it=function->args.begin(); it != function->args.end(); it++) {
+    if (it!=function->args.begin()) {
+      printf(", ");
+    }
+    print_variable(*it, cpu, mem, src_info, true);
+  }
+  printf(") %s\n", frame->sourceLocation);
 }
 
 int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
@@ -436,6 +562,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
   const int INT_INFINITY = 0x7FFFFFFF;
   int saved_execution_range_start = 0;
   int saved_execution_range_end = INT_INFINITY;
+  uint16_t selected_scope = cpu.PC;
+  
 
   show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
 
@@ -531,7 +659,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	incmd >> param2;
 
 	
-	VariableInfo* v = src_info.find_variable(cpu.PC, param1.c_str());
+	VariableInfo* v = src_info.find_variable(selected_scope , param1.c_str());
 	if (v) {
 	  set_variable(v, cpu, mem, src_info, param2);
 	} else {
@@ -631,8 +759,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	cpu.decode(IR);
       }
     } else if (cmdstr == "help" || cmdstr == "h") {
-#warning HELP is disabled for developement. Enable it before a release!
-      //printf("%s", HELP);
+//#warning HELP is disabled for developement. Enable it before a release!
+      printf("%s", HELP);
     } else if (cmdstr == "load" || cmdstr == "l" || cmdstr == "file") {
       incmd >> param1;
       uint16_t entry;
@@ -761,7 +889,11 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       } else {
 	// add to display
 	// TODO: FixMe: handle special names (registers) from mytable
-	if (src_info.symbol.count(param1)) {
+	VariableInfo* v = src_info.find_variable(selected_scope, param1.c_str());
+
+	if (v) {
+	  displays.push_back(DisplayInfo(++lastDisplay, v->address, strdup(param1.c_str()), v->typeId));
+	} else if (src_info.symbol.count(param1)) {
 	  uint16_t addr = src_info.symbol[param1];
 	  displays.push_back(DisplayInfo(++lastDisplay, addr, strdup(param1.c_str()), 0));
 	} else {
@@ -771,7 +903,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       }
     } else if (cmdstr == "print" || cmdstr == "p" || cmdstr == "output") {
       incmd >> param1;
-      VariableInfo* v = src_info.find_variable(cpu.PC, param1.c_str());
+      VariableInfo* v = src_info.find_variable(selected_scope, param1.c_str());
 
       if (v) {
 	print_variable(v, cpu, mem, src_info);
@@ -853,6 +985,50 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	  incmd >> param1;
 	} while (!param1.empty());
       }
+    } else if (cmdstr == "frame" || cmdstr == "up" || cmdstr == "down") {
+	incmd >> param1;
+	int N = -1;
+	try {
+	  N = lexical_cast<uint16_t>(param1);
+	} catch(bad_lexical_cast &e) {
+	}
+
+	update_backtrace(cpu, mem, src_info);
+	int frame_count = backtrace.frames.size();
+
+	if (cmdstr == "frame") {
+	  //selected_frame = backtrace.frames.begin() + ((N==-1) ? 0 : N);
+	  selected_frame_id = ((N==-1) ? selected_frame_id : N);
+	} else if (cmdstr == "up") {
+	  selected_frame_id += ((N==-1) ? 1 : N);
+	  //selected_frame += (N==-1) ? 1 : N;
+	  //selected_frame = backtrace.frames.begin() + (*selected_frame)->id +((N==-1) ? 1 : N);
+	} else if (cmdstr == "down") {
+	  selected_frame_id -= ((N==-1) ? 1 : N);
+	  //selected_frame = backtrace.frames.begin() + (*selected_frame)->id -((N==-1) ? 1 : N);
+	  //selected_frame -= (N==-1) ? 1 : N;
+	}
+	if (selected_frame_id >= frame_count) {
+	  selected_frame_id = frame_count-1;
+	}
+	if (selected_frame_id < 0) {
+	  selected_frame_id = 0;
+	}
+	selected_frame = backtrace.frames.begin() + selected_frame_id;
+
+	//if (selected_frame != backtrace.frames.end()) {
+	if (frame_count) {
+	  print_frame(*selected_frame, cpu, mem, src_info);
+	  selected_scope = (*selected_frame)->scope;
+	  show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode, selected_scope);
+	}
+	continue;
+    } else if (cmdstr == "bt" || cmdstr == "where") {
+      update_backtrace(cpu, mem, src_info);
+
+      for (int i=0; i < backtrace.frames.size(); i++) {
+	print_frame(backtrace.frames[i], cpu, mem, src_info);
+      }
     } else if (cmdstr == "info") {
       incmd >> param1;
 #warning fake command for developement. Remove it before a release!
@@ -864,27 +1040,22 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	} catch(bad_lexical_cast &e) {
 	  scope = cpu.PC;
 	}
-	backup = cpu.PC;
-	cpu.PC = scope;
-
 	printf("Locals:\n");	
-	print_locals(cpu, mem, src_info);
+	print_locals(cpu, mem, src_info, scope);
 	printf("Args:\n");
-	print_args(cpu, mem, src_info);
+	print_args(cpu, mem, src_info, scope);
 	printf("Variables:\n");
-	print_globals(cpu, mem, src_info);
-
-	cpu.PC = backup;
+	print_globals(cpu, mem, src_info, scope);
       }
       if (param1 == "breakpoints" || param1 == "b") {
 	breakpoints.showInfo();
 	// FixMe: Todo: add context, to use with "frame" commands, and use it as replacement of cpu.PC
       } else if (param1 == "locals") {
-	print_locals(cpu, mem, src_info);
+	print_locals(cpu, mem, src_info, selected_scope);
       } else if (param1 == "args") {
-	print_args(cpu, mem, src_info);
+	print_args(cpu, mem, src_info, selected_scope);
       } else if (param1 == "variables") {
-	print_globals(cpu, mem, src_info);
+	print_globals(cpu, mem, src_info, selected_scope);
       }
     } else {
       printf("Bad command `%s'\nTry using the `help' command.\n", cmd);
@@ -963,7 +1134,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	}
 
       }
-
+      selected_scope = cpu.PC;
       show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
     }
 
