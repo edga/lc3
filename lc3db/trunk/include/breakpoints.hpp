@@ -41,7 +41,7 @@ typedef std::list<Breakpoint*>::iterator BreakpointIterator;
 class UserBreakpoits {
 public:
   UserBreakpoits(SourceInfo &_src_info) :
-    src_info(_src_info) {};
+    src_info(_src_info), last_id(0) {};
   // ~UserBreakpoits();
 /*
   Usage:

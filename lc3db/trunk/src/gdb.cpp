@@ -31,6 +31,7 @@ static char* readline (const char* prompt);
 #include <sstream>
 #include <iostream>
 #include <iomanip>
+#include <ctype.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -204,7 +205,7 @@ uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t
   ret  = mem.load(object);
   if (ret == 0xFFFF) return ret;
 
-  f = fopen(debug.c_str(), "r");
+  f = fopen(debug.c_str(), "rt");
   if (!f) return ret;
 
   /* Instead of introducing one more special directive to the assembler,
@@ -237,9 +238,15 @@ uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t
     switch(c) {
     case '#':
       if (1 == fscanf(f, "%d:", &fileId)) {
+	int i;
         fgets(buf, sizeof(buf), f);
-        buf[strlen(buf) - 1] = 0;
+	i = strlen(buf);
+	while (i>=1 && isspace(buf[i-1])) {
+	  i--;
+	  buf[i] = 0;
+	}
         src_info.add_source_file(fileId, std::string(buf));
+	fprintf(stderr, "add_source_file: %d %s\n", fileId, buf);
 	line_error = NULL;
       } 
       break;
