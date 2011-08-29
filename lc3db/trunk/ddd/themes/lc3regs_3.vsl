@@ -1,0 +1,21 @@
+// to print lc3regs nicely 3
+
+//#include "/usr/share/ddd/vsllib/verbose.vsl"
+
+i(a) = indent(a);
+
+make_my_boxes(a,b,c,d,...) = (a & i(b) & i(c) & i(d)) | make_my_boxes(...);
+make_my_boxes(a,b,c)       =  a & i(b) & i(c) & i("");
+make_my_boxes(a,b)         =  a & i(b) & i("")& i("");
+make_my_boxes(a)           =  a & i("")& i("")& i("");
+
+#pragma override old_struct_member
+old_struct_member(...) -> struct_member(...);
+#pragma override struct_member
+struct_member (...) -> old_struct_member(...);
+
+#pragma override old_struct_value
+old_struct_value(...) -> struct_value(...);
+#pragma override struct_value
+struct_value (...) -> 
+  struct_color(frame(make_my_boxes(...)));
