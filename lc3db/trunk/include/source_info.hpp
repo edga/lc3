@@ -26,6 +26,7 @@
 #include <map>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 #include <assert.h>
 
 // External source location representation
@@ -65,7 +66,7 @@ struct VariableInfo{
   int address;	// LC3 absolute address if isAddressAbsolute; else frame (R5) offset
   VariableInfo(const char*_name, VariableKind _kind) :
     name(strdup(_name)), kind(_kind),
-    typeId(0), isAddressAbsolute(0), address(0) 
+    typeId(0), isCpuSpecial(1), isAddressAbsolute(0), address(0) 
   {
     assert(kind==CpuSpecial);
   }
@@ -75,6 +76,9 @@ struct VariableInfo{
     isCpuSpecial = _kind==CpuSpecial;
     isAddressAbsolute = _kind==FileGlobal || _kind==FileStatic || _kind==FunctionStatic || _kind==AssemblerLabel;
   }
+//  ~VariableInfo() {
+//    free((void*)name);
+//  }
 };
 
 struct SourceBlock;

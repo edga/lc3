@@ -12,17 +12,22 @@ class bad_lexical_cast : public std::bad_cast {
   }
 };
 
-template <typename Target, typename Source> 
-Target lexical_cast(const Source &arg);
+template <typename Target> 
+Target lexical_cast(const std::string &arg);
+template <typename Target> 
+Target lexical_cast(const char *arg);
 
 template<>
-uint16_t lexical_cast<uint16_t, std::string>(const std::string &str)
+uint16_t lexical_cast<uint16_t>(const char *str)
 {
-  std::string input = ((str[0] | 0x20) == 'x') ? "0" + str : str;
   char *end = 0;
-  uint32_t value = strtoul(input.c_str(), &end, 0);
-
-  if (!end || *end || value >= 0x10000 || end == input.c_str()) {
+  int base = 0;
+  if ((str[0]|0x20)=='x') {	// handle the lc3 hex (x1234)
+	  str++;
+	  base = 16;
+  }
+  long value = strtol(str, &end, base);
+  if (!end || *end || value >= 0x10000 || end == str) {
     throw bad_lexical_cast();
   }
 
@@ -30,17 +35,32 @@ uint16_t lexical_cast<uint16_t, std::string>(const std::string &str)
 }
 
 template<>
-int16_t lexical_cast<int16_t, std::string>(const std::string &str)
+int16_t lexical_cast<int16_t>(const char * str)
 {
-  std::string input = ((str[0] | 0x20) == 'x') ? "0" + str : str;
   char *end = 0;
-  int32_t value = strtoul(input.c_str(), &end, 0);
-
-  if (!end || *end || value >= 0x10000 || value < (-0x8000) || end == input.c_str()) {
+  int base = 0;
+  if ((str[0]|0x20)=='x') {	// handle the lc3 hex (x1234)
+	  str++;
+	  base = 16;
+  }
+  long value = strtol(str, &end, base);
+  if (!end || *end || value >= 0x10000 || value < (-0x8000) || end == str) {
     throw bad_lexical_cast();
   }
 
   return value & 0xFFFF;
+}
+
+template<>
+uint16_t lexical_cast<uint16_t>(const std::string &str)
+{
+  return lexical_cast<uint16_t>(str.c_str());
+}
+
+template<>
+int16_t lexical_cast<int16_t>(const std::string &str)
+{
+  return lexical_cast<int16_t>(str.c_str());
 }
 
 #endif

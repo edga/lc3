@@ -44,16 +44,23 @@ static char* readline (const char* prompt);
 #include "source_info.hpp"
 #include "breakpoints.hpp"
 
-  extern char* path_ptr;
+extern char* path_ptr;
 
-namespace std {
-  struct ichar_traits : std::char_traits<char> {
-    static int compare(const char *lhs, const char *rhs, size_t len) {
-      return strncasecmp(lhs, rhs, len);
-    }
-  };
-  typedef basic_string<char, ichar_traits, allocator<char> > istring;
-}
+//namespace std {
+//  struct ichar_traits : std::char_traits<char> {
+//    static int compare(const char *lhs, const char *rhs, size_t len) {
+//      return strncasecmp(lhs, rhs, len);
+//    }
+//  };
+//  typedef basic_string<char, ichar_traits, allocator<char> > istring;
+//} 
+struct str_case_cmp {
+  bool operator()(const char *a, const char *b) const
+  {
+    return strcasecmp(a, b) < 0;
+  }
+};
+
 
 struct DisplayInfo{
   int id;
@@ -84,10 +91,10 @@ static BacktraceInfo backtrace;
 static std::vector<FrameInfo*>::iterator selected_frame=backtrace.frames.end();
 static int selected_frame_id = -1;
 
-static std::map<std::istring, int16_t *> cpu_special_variables;
+//static std::map<std::istring, int16_t *> cpu_special_variables;
+static std::map<const char*, int16_t *, str_case_cmp> cpu_special_variables;
 
-static bool displaysRegsEnabled = 0;
-static int lastDisplay = 1;	// ID==1 reserved for display of registers
+static int lastDisplay = 0;
 static std::vector<DisplayInfo> displays;
 typedef std::vector<DisplayInfo>::reverse_iterator DisplayInfoIterator;
 const int DISPLAY_NOT_FOUND = -1;
@@ -378,6 +385,7 @@ void sigproc(int sig)
   // TODO: make proper synchronization to avoid race conditions
 }
 
+void print_registers(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, const char *value_sep, const char *reg_sep);
 void print_displays(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, bool show_values);
 
 void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, bool gui_mode, bool quiet_mode, uint16_t scope=0)
@@ -403,11 +411,43 @@ void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, b
   print_displays(cpu, mem, src_info, true);
 }
 
+
+VariableInfo* find_variable(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, const char* name, uint16_t scope){
+  VariableInfo* v = src_info.find_variable(scope, name);
+  if (!v) {
+    uint16_t addr;
+    if (strcmp(name,"lc3CPU")==0 ||
+	strcasecmp(name,"lc3CPU.MCR")==0 ||
+	strcasecmp(name,"MCR")==0) {
+      v = new VariableInfo(name, CpuSpecial);
+    } else if (cpu_special_variables.count(name)) {
+      v = new VariableInfo(name, CpuSpecial);
+    } else if (src_info.symbol.count(name)) {
+      addr = src_info.symbol[name];
+      v = new VariableInfo(name, AssemblerLabel, 0, addr);
+    } else {
+      try {
+	addr = lexical_cast<uint16_t>(name);
+	v = new VariableInfo(name, AssemblerLabel, 0, addr);
+      } catch(bad_lexical_cast &e) {
+	return NULL;
+      }
+    }
+  }
+  return v;
+  // TODO: FixMe: handle freeing/aliasing
+}
+
 void set_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, std::string valueString){
   try {
     int16_t val = lexical_cast<int16_t>(valueString);
     if (v->isCpuSpecial) {
-      if(cpu_special_variables.count(v->name)) {
+      if (strcmp(v->name,"lc3CPU")==0) {
+	fprintf(stderr, "Registers can only be set individually\n");
+      } else if (strcasecmp(v->name,"lc3CPU.MCR")==0 ||
+	  strcasecmp(v->name,"MCR")==0) {
+	mem[0xFFFE] = val;
+      } else if(cpu_special_variables.count(v->name)) {
 	*cpu_special_variables[v->name] = val;
       } else {
 	fprintf(stderr, "Can't set \"%s\" wrong special variable\n", v->name);
@@ -417,17 +457,27 @@ void set_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_i
       mem[addr] = val;
     }
   } catch(bad_lexical_cast &e) {
-    fprintf(stderr, "Can't set \"%s\" to \"%s\", wrong value (only single value integers supported)\n", v->name, valueString.c_str());
+    fprintf(stderr, "Can't set \"%s\" to \"%s\", wrong value (only single value integers from [-0x8000..0xFFFF] range supported)\n", v->name, valueString.c_str());
   }
 
 }
+
+
 void print_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, bool compressed=false){
   //const char *fmt = compressed ? "%s=0x%.4x %d" : "%s = 0x%.4x %d\n";
   const char *fmt = compressed ? "%s=%d" : "%s = %d\n";
   int16_t val;
 
   if (v->isCpuSpecial) {
-    if(cpu_special_variables.count(v->name)) {
+    if (strcmp(v->name,"lc3CPU")==0) {
+      printf("lc3CPU = {");
+      print_registers(cpu, mem, src_info, " = ",", ");
+      printf("}\n");
+      return;
+    } else if (strcasecmp(v->name,"lc3CPU.MCR")==0 ||
+	strcasecmp(v->name,"MCR")==0) {
+      val = mem[0xFFFE] & 0xFFFF;
+    } else if(cpu_special_variables.count(v->name)) {
       val = *cpu_special_variables[v->name] ;
     } else {
       fprintf(stderr, "Can't set \"%s\" wrong special variable\n", v->name);
@@ -437,29 +487,32 @@ void print_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src
     val = mem[addr] & 0xFFFF;
   }
 
-  printf(fmt, v->name, val, val);
+  //printf(fmt, v->name, val, val);
+  printf(fmt, v->name, val);
 }
 
 void print_registers(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, const char *value_sep, const char *reg_sep)
 {
-  char reg[] = "R0";
   for (int i = 0; i < 8; i++) {
-    reg[1] = '0' + i;
 #if 1
     printf("R%d%s0x%.4x %d%s", i, value_sep, cpu.R[i] & 0xFFFF, cpu.R[i], reg_sep);
   }
   printf("PC%s0x%.4x %5d%s",value_sep, cpu.PC & 0xFFFF, cpu.PC & 0xFFFF, reg_sep);
-  printf("MCR%s0x%.4x %5d%s",value_sep, mem[0xFFFE] & 0xFFFF, mem[0xFFFE]+0, reg_sep);
-  printf("PSR%s0x%.4x %5d%s",value_sep, cpu.PSR & 0xFFFF, cpu.PSR & 0xFFFF, reg_sep);
-  printf("CC%s%c%c%c",value_sep, (cpu.PSR&0x4)?'N':' ', (cpu.PSR&0x2)?'Z':' ', (cpu.PSR&0x1)?'P':' ');
+  printf("MCR%s0x%.4x %s%s",value_sep, mem[0xFFFE] & 0xFFFF, (mem[0xFFFE]&0x8000)?"":"Halted", reg_sep);
+  printf("PSR%s0x%.4x %s Pri:%.1x %c%c%c",value_sep, cpu.PSR & 0xFFFF,
+      (cpu.PSR & 0x8000) ? "User" : "Kern",
+      (cpu.PSR >> 8) & 0x7,
+      (cpu.PSR&0x4)?'N':'-', (cpu.PSR&0x2)?'Z':'-', (cpu.PSR&0x1)?'P':'-');
 #else
     printf("R%d%s0x%.4x%s", i, value_sep, cpu.R[i] & 0xFFFF, reg_sep);
   }
   
   printf("PC%s0x%.4x%s",value_sep, cpu.PC & 0xFFFF, reg_sep);
-  printf("MCR%s0x%.4x%s",value_sep, mem[0xFFFE] & 0xFFFF, reg_sep);
-  printf("PSR%s0x%.4x%s",value_sep, cpu.PSR & 0xFFFF, reg_sep);
-  printf("CC%s%c%c%c",value_sep, (cpu.PSR&0x4)?'N':' ', (cpu.PSR&0x2)?'Z':' ', (cpu.PSR&0x1)?'P':' ');
+  printf("MCR%s0x%.4x %s%s",value_sep, mem[0xFFFE] & 0xFFFF, (mem[0xFFFE]&0x8000)?"":"Halted", reg_sep);
+  printf("PSR%s0x%.4x %s Pri:%.1x %c%c%c",value_sep, cpu.PSR & 0xFFFF,
+      (cpu.PSR & 0x8000) ? "User" : "Kern",
+      (cpu.PSR >> 8) & 0x7,
+      (cpu.PSR&0x4)?'N':'-', (cpu.PSR&0x2)?'Z':'-', (cpu.PSR&0x1)?'P':'-');
 #endif
 }
 
@@ -467,8 +520,7 @@ void print_displays(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, bool show_
   DisplayInfoIterator it;
 
   if (!show_values) {
-    //if ((displays.size()+displaysRegsEnabled)>0) {
-    if (true) {// enabled because wanted to show the lc3CPU even if disabled
+    if (displays.size()>0) {
       printf("Num Enb Expression\n");
     } else {
       printf("There are no auto-display expressions now.\n");
@@ -482,14 +534,6 @@ void print_displays(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, bool show_
     } else {
       printf("  %c  %s\n", it->isActive ? 'y' : 'n', it->variable->name);
     }
-  }
-
-  if (!show_values) {
-    printf("1:  %c  lc3CPU\n", displaysRegsEnabled ? 'y' : 'n');
-  } else if (displaysRegsEnabled) {
-    printf("1: lc3CPU = {");
-    print_registers(cpu, mem, src_info, " = ",", ");
-    printf("}\n");
   }
 }
 
@@ -618,20 +662,6 @@ void print_frame(FrameInfo *frame, LC3::CPU &cpu, Memory &mem, SourceInfo &src_i
 int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	     bool gui_mode, bool quiet_mode, const char *exec_file)
 {
-  if (!quiet_mode) {
-    printf("Type `help' for a list of commands.\n");
-  }
-
-  cpu_special_variables["PC"] = (int16_t *)&cpu.PC;
-  cpu_special_variables["R0"] = &cpu.R[0];
-  cpu_special_variables["R1"] = &cpu.R[1];
-  cpu_special_variables["R2"] = &cpu.R[2];
-  cpu_special_variables["R3"] = &cpu.R[3];
-  cpu_special_variables["R4"] = &cpu.R[4];
-  cpu_special_variables["R5"] = &cpu.R[5];
-  cpu_special_variables["R6"] = &cpu.R[6];
-  cpu_special_variables["R7"] = &cpu.R[7];
-  cpu_special_variables["PSR"] = (int16_t *)&cpu.PSR;
   std::string param1;
   std::string param2;
   uint16_t off = 0;
@@ -640,6 +670,32 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
   char sys_string[2048];
 
   int instruction_count = 0;
+
+  if (!quiet_mode) {
+    printf("Type `help' for a list of commands.\n");
+  }
+
+  cpu_special_variables["R0"] = &cpu.R[0];
+  cpu_special_variables["R1"] = &cpu.R[1];
+  cpu_special_variables["R2"] = &cpu.R[2];
+  cpu_special_variables["R3"] = &cpu.R[3];
+  cpu_special_variables["R4"] = &cpu.R[4];
+  cpu_special_variables["R5"] = &cpu.R[5];
+  cpu_special_variables["R6"] = &cpu.R[6];
+  cpu_special_variables["R7"] = &cpu.R[7];
+  cpu_special_variables["PC"] = (int16_t *)&cpu.PC;
+  cpu_special_variables["PSR"] = (int16_t *)&cpu.PSR;
+  cpu_special_variables["lc3CPU.R0"] = &cpu.R[0];
+  cpu_special_variables["lc3CPU.R1"] = &cpu.R[1];
+  cpu_special_variables["lc3CPU.R2"] = &cpu.R[2];
+  cpu_special_variables["lc3CPU.R3"] = &cpu.R[3];
+  cpu_special_variables["lc3CPU.R4"] = &cpu.R[4];
+  cpu_special_variables["lc3CPU.R5"] = &cpu.R[5];
+  cpu_special_variables["lc3CPU.R6"] = &cpu.R[6];
+  cpu_special_variables["lc3CPU.R7"] = &cpu.R[7];
+  cpu_special_variables["lc3CPU.PC"] = (int16_t *)&cpu.PC;
+  cpu_special_variables["lc3CPU.PSR"] = (int16_t *)&cpu.PSR;
+
 
 #if defined(USE_READLINE)
   using_history();
@@ -684,14 +740,14 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     param2.clear();
     incmd >> cmdstr;
 
-    if (cmdstr == "help" || cmdstr == "h") {
-      show_help = 1;
-      incmd >> cmdstr;
 #warning HELP is disabled for developement. Enable it before a release!
-      // Leave only general list with commands and  split the help message
-      // to commands and print it together with parsing (see "run" command)
-      //printf("%s", HELP);
-    }
+//    if (cmdstr == "help" || cmdstr == "h") {
+//      show_help = 1;
+//      incmd >> cmdstr;
+//      // Leave only general list with commands and  split the help message
+//      // to commands and print it together with parsing (see "run" command)
+//      //printf("%s", HELP);
+//    }
 
     if (cmdstr == "run") {
       if (show_help) {
@@ -756,20 +812,11 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	incmd >> param2;
 
 
-	VariableInfo* v = src_info.find_variable(selected_scope , param1.c_str());
+	VariableInfo* v = find_variable(cpu, mem, src_info, param1.c_str(), selected_scope);
 	if (v) {
 	  set_variable(v, cpu, mem, src_info, param2);
 	} else {
-	  int16_t value = lexical_cast<int16_t>(param2);
-
-	  if(cpu_special_variables.count(param1.c_str()))
-	    *cpu_special_variables[param1.c_str()] = value;
-	  else if(src_info.symbol.count(param1)) {
-	    uint16_t addr = src_info.symbol[param1];
-	    mem[addr] = value;
-	  } else {
-	    fprintf(stderr, "variable \"%s\" not found\n", param1.c_str());
-	  }
+	  fprintf(stderr, "variable \"%s\" not found\n", param1.c_str());
 	}
       } else {
 	fprintf(stderr, "\"set\" command is only supported for setting simple variables. Syntax:\n"
@@ -780,10 +827,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       if (cmdstr == "x") {
 	incmd >> param2 >> param1;
 	if (param2 == "regs" || param1 == "regs") {
-	  char reg[] = "R0";
 	  for (int i = 0; i < 8; i++) {
 	    if (i == 4) printf("\n");
-	    reg[1] = '0' + i;
 	    printf("R%d:  %.4x (%5d)  ", i,
 		   cpu.R[i] & 0xFFFF, cpu.R[i] & 0xFFFF);
 	  }
@@ -972,52 +1017,16 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       if (param1.empty()) {
 	// show display list
 	print_displays(cpu, mem, src_info, true);
-      } else if (param1 == "lc3CPU"){
-	// TODO: FixMe: handle the lc3CPU special variable properly
-	displaysRegsEnabled = 1;
       } else {
 	// add to display
-	VariableInfo* v = src_info.find_variable(selected_scope, param1.c_str());
-
-	if (!v) {
-	  uint16_t addr;
-	  if (cpu_special_variables.count(param1.c_str())) {
-	    v = new VariableInfo(param1.c_str(), CpuSpecial);
-	  } else if (src_info.symbol.count(param1)) {
-	    addr = src_info.symbol[param1];
-	    v = new VariableInfo(param1.c_str(), AssemblerLabel, 0, addr);
-	  } else {
-	    addr = lexical_cast<uint16_t>(param1);
-	    v = new VariableInfo(param1.c_str(), AssemblerLabel, 0, addr);
-	  }
-	}
-	displays.push_back(DisplayInfo(++lastDisplay+1, v));
+	VariableInfo* v = find_variable(cpu, mem, src_info, param1.c_str(), selected_scope);
+	if (v) displays.push_back(DisplayInfo(++lastDisplay, v));
       }
     } else if (cmdstr == "print" || cmdstr == "p" || cmdstr == "output") {
       incmd >> param1;
-      VariableInfo* v = src_info.find_variable(selected_scope, param1.c_str());
-
+      VariableInfo* v = find_variable(cpu, mem, src_info, param1.c_str(), selected_scope);
       if (v) {
 	print_variable(v, cpu, mem, src_info);
-      } else if (cpu_special_variables.count(param1.c_str())) {
-	printf("%s = %.4x (%d)\n", param1.c_str(),
-	       *cpu_special_variables[param1.c_str()] & 0xFFFF,
-	       *cpu_special_variables[param1.c_str()] & 0xFFFF);
-      } else if (src_info.symbol.count(param1)) {
-	uint16_t addr = src_info.symbol[param1];
-	printf("0x%.4x: %.4x (%d)\n", addr & 0xFFFF,
-	       mem[addr] & 0xFFFF, mem[addr] & 0xFFFF);
-      } else if (param1 == "all") {
-	std::map<std::istring, int16_t *>::iterator i;
-	for (i = cpu_special_variables.begin(); i != cpu_special_variables.end(); ++i) {
-	  printf("%s = %.4x (%d)\n", i->first.c_str(),
-		 (*i->second) & 0xFFFF, (*i->second) & 0xFFFF);
-	}
-      } else {
-	off = lexical_cast<uint16_t>(param1);
-	printf("0x%.4x: %.4x (%d)\n", off & 0xFFFF,
-	       (int16_t)mem[off & 0xFFFF] & 0xFFFF,
-	       (int16_t)mem[off & 0xFFFF] & 0xFFFF);
       }
     } else if (cmdstr == "exit" || cmdstr == "quit" || cmdstr == "q") {
       break;

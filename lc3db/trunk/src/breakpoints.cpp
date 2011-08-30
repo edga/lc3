@@ -77,9 +77,13 @@ public:
   //	 	breakpoint already hit 2 times
   //	 	ignore next 2 hits
   //	2       breakpoint     dis  n   0x080483f7 in main at test_struct.c:27
-  static void list_header(){
-    printf("%-8s%-15s%-5s%-4s%-11s%s\n",
-	   "Num", "Type", "Disp", "Enb", "Address", "What");
+  static void list_header(bool not_empty){
+    if (not_empty) {
+      printf("%-8s%-15s%-5s%-4s%-11s%s\n",
+	  "Num", "Type", "Disp", "Enb", "Address", "What");
+    } else {
+      printf("No breakpoints or watchpoints.\n");
+    }
   }
   static void list_line(int id, uint16_t address, BreakpointDisposition disp, bool enabled, int hits, int ignore, const char *file, int line){
     const char * dispStr = "keep";
@@ -255,12 +259,13 @@ int UserBreakpoits::check(uint16_t address)
 
 void UserBreakpoits::showInfo()
 {
-  BreakpointsUI::list_header();
   BreakpointIterator it;
+  bool not_empty = breakpoints.begin() != breakpoints.end();
+  BreakpointsUI::list_header(not_empty);
 
   for (it = breakpoints.begin();
-       it != breakpoints.end();
-       it++) {
+      it != breakpoints.end();
+      it++) {
     BreakpointsUI::list_line(*it);
   }
 }
