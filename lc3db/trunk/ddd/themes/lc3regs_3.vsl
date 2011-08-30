@@ -13,7 +13,10 @@ make_my_boxes3(a,b,c,d,...) = (a & i3(b) & i3(c) & i3(d)) | make_my_boxes3(...);
 #pragma override old_struct_member
 old_struct_member(...) -> struct_member(...);
 #pragma override struct_member
-struct_member (...) -> old_struct_member(...);
+//struct_member (...) -> old_struct_member(...);
+//struct_member (name, sep, value, name_width) -> 
+struct_member (name, _, value, name_width) -> 
+  vcenter(value_rm(name) | hspace(name_width)) & value_rm(value);
 
 #pragma override old_struct_value
 old_struct_value(...) -> struct_value(...);
