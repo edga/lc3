@@ -26,6 +26,7 @@
 #include <map>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 
 // External source location representation
 struct SourceLocation
@@ -50,19 +51,30 @@ enum VariableKind {
 	FileStatic,
 	FunctionStatic,
 	FunctionLocal,
-	FunctionParameter
+	FunctionParameter,
+	AssemblerLabel,
+	CpuSpecial
 };
 
 struct VariableInfo{
   const char* name;
   VariableKind kind;
   int typeId;
+  bool isCpuSpecial;
   bool isAddressAbsolute;
   int address;	// LC3 absolute address if isAddressAbsolute; else frame (R5) offset
-  VariableInfo(const char*_name, VariableKind _kind, int _typeId, bool _isAddressAbsolute, int _address) :
-    name(strdup(_name)), kind(_kind), typeId(_typeId), isAddressAbsolute(_isAddressAbsolute), address(_address) {}
-//  VariableInfo(const VariableInfo & v) :
-//    name(v.name), kind(v.kind), typeId(v.typeId), isAddressAbsolute(v.isAddressAbsolute), address(v.address) {}
+  VariableInfo(const char*_name, VariableKind _kind) :
+    name(strdup(_name)), kind(_kind),
+    typeId(0), isAddressAbsolute(0), address(0) 
+  {
+    assert(kind==CpuSpecial);
+  }
+  VariableInfo(const char*_name, VariableKind _kind, int _typeId, int _address) :
+    name(strdup(_name)), kind(_kind), typeId(_typeId), address(_address) 
+  {
+    isCpuSpecial = _kind==CpuSpecial;
+    isAddressAbsolute = _kind==FileGlobal || _kind==FileStatic || _kind==FunctionStatic || _kind==AssemblerLabel;
+  }
 };
 
 struct SourceBlock;

@@ -58,17 +58,11 @@ namespace std {
 struct DisplayInfo{
   int id;
   bool isActive;
-  const char* name;
-  uint16_t address;
-  int typeId;
-  DisplayInfo(int _id, uint16_t _address, const char* _name, int _typeId) :
-    id(_id), address(_address), name(_name), typeId(_typeId),
+  VariableInfo *variable;
+  DisplayInfo(int _id, VariableInfo* _variable) :
+    id(_id), variable(_variable),
     isActive(true) {}
 };
-typedef std::vector<DisplayInfo>::iterator DisplayInfoIterator;
-int lastDisplay = 0;
-std::vector<DisplayInfo> displays;
-
 
 struct FrameInfo {
   int id;
@@ -88,7 +82,16 @@ struct BacktraceInfo {
 
 static BacktraceInfo backtrace;
 static std::vector<FrameInfo*>::iterator selected_frame=backtrace.frames.end();
-int selected_frame_id = -1;
+static int selected_frame_id = -1;
+
+static std::map<std::istring, int16_t *> cpu_special_variables;
+
+static bool displaysRegsEnabled = 0;
+static int lastDisplay = 1;	// ID==1 reserved for display of registers
+static std::vector<DisplayInfo> displays;
+typedef std::vector<DisplayInfo>::reverse_iterator DisplayInfoIterator;
+const int DISPLAY_NOT_FOUND = -1;
+
 
 const char * HELP =
 "Commands: - shortcuts shown in ()\n"
@@ -156,7 +159,7 @@ const char * HELP =
 
 " print (p) <data>\n"
 "   Prints the value of the symbol, register, or address specified by\n"
-"   data.  Use \"print all\" to see contents of registers.\n\n"
+"   data.  Use \"lc3CPU\" as <data> to see contents of registers.\n\n"
 
 " run\n"
 "   Initializes the machine and runs the operating system.\n\n"
@@ -201,7 +204,7 @@ uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t
   std::string object = file;
   std::string base = object.substr(0, object.rfind(".obj"));
   std::string debug = base + ".dbg";
- 
+
   ret  = mem.load(object);
   if (ret == 0xFFFF) return ret;
 
@@ -225,7 +228,7 @@ uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t
    */
   src_info.reset_HLL_info();
   fprintf(stderr, "\n--------------------- starting parsing debug file: %s -------------------------------\n", debug.c_str());
-  
+
 
   debugLine = 0;
   while (!feof(f)) {
@@ -248,7 +251,7 @@ uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t
         src_info.add_source_file(fileId, std::string(buf));
 	fprintf(stderr, "add_source_file: %d %s\n", fileId, buf);
 	line_error = NULL;
-      } 
+      }
       break;
 
     case '!':
@@ -337,7 +340,7 @@ uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t
 
 	    default:
 	      line_error = "Unrecognised symbol kind";
-	  } 
+	  }
 	}
       }
       break;
@@ -375,6 +378,8 @@ void sigproc(int sig)
   // TODO: make proper synchronization to avoid race conditions
 }
 
+void print_displays(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, bool show_values);
+
 void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, bool gui_mode, bool quiet_mode, uint16_t scope=0)
 {
   if (scope==0) {
@@ -395,26 +400,110 @@ void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, b
     printf("0x%.4x: %.4x: ", scope & 0xFFFF, mem[scope] & 0xFFFF);
     cpu.decode(mem[scope]);
   }
+  print_displays(cpu, mem, src_info, true);
 }
 
 void set_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, std::string valueString){
-  uint16_t addr = v->address + (v->isAddressAbsolute ? 0 : cpu.R[5]);
-
   try {
     int16_t val = lexical_cast<int16_t>(valueString);
-    mem[addr] = val;
+    if (v->isCpuSpecial) {
+      if(cpu_special_variables.count(v->name)) {
+	*cpu_special_variables[v->name] = val;
+      } else {
+	fprintf(stderr, "Can't set \"%s\" wrong special variable\n", v->name);
+      }
+    } else {
+      uint16_t addr = v->address + (v->isAddressAbsolute ? 0 : cpu.R[5]);
+      mem[addr] = val;
+    }
   } catch(bad_lexical_cast &e) {
     fprintf(stderr, "Can't set \"%s\" to \"%s\", wrong value (only single value integers supported)\n", v->name, valueString.c_str());
   }
 
 }
 void print_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, bool compressed=false){
-  uint16_t addr = v->address + (v->isAddressAbsolute ? 0 : cpu.R[5]);
-  const char *fmt = compressed ? "%s=0x%.4x %d" : "%s = 0x%.4x %d\n";
-  printf(fmt, v->name,
-      mem[addr] & 0xFFFF,
-      mem[addr] + 0);
+  //const char *fmt = compressed ? "%s=0x%.4x %d" : "%s = 0x%.4x %d\n";
+  const char *fmt = compressed ? "%s=%d" : "%s = %d\n";
+  int16_t val;
+
+  if (v->isCpuSpecial) {
+    if(cpu_special_variables.count(v->name)) {
+      val = *cpu_special_variables[v->name] ;
+    } else {
+      fprintf(stderr, "Can't set \"%s\" wrong special variable\n", v->name);
+    }
+  } else {
+    uint16_t addr = v->address + (v->isAddressAbsolute ? 0 : cpu.R[5]);
+    val = mem[addr] & 0xFFFF;
+  }
+
+  printf(fmt, v->name, val, val);
 }
+
+void print_registers(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, const char *value_sep, const char *reg_sep)
+{
+  char reg[] = "R0";
+  for (int i = 0; i < 8; i++) {
+    reg[1] = '0' + i;
+#if 1
+    printf("R%d%s0x%.4x %d%s", i, value_sep, cpu.R[i] & 0xFFFF, cpu.R[i], reg_sep);
+  }
+  printf("PC%s0x%.4x %5d%s",value_sep, cpu.PC & 0xFFFF, cpu.PC & 0xFFFF, reg_sep);
+  printf("MCR%s0x%.4x %5d%s",value_sep, mem[0xFFFE] & 0xFFFF, mem[0xFFFE]+0, reg_sep);
+  printf("PSR%s0x%.4x %5d%s",value_sep, cpu.PSR & 0xFFFF, cpu.PSR & 0xFFFF, reg_sep);
+  printf("CC%s%c%c%c",value_sep, (cpu.PSR&0x4)?'N':' ', (cpu.PSR&0x2)?'Z':' ', (cpu.PSR&0x1)?'P':' ');
+#else
+    printf("R%d%s0x%.4x%s", i, value_sep, cpu.R[i] & 0xFFFF, reg_sep);
+  }
+  
+  printf("PC%s0x%.4x%s",value_sep, cpu.PC & 0xFFFF, reg_sep);
+  printf("MCR%s0x%.4x%s",value_sep, mem[0xFFFE] & 0xFFFF, reg_sep);
+  printf("PSR%s0x%.4x%s",value_sep, cpu.PSR & 0xFFFF, reg_sep);
+  printf("CC%s%c%c%c",value_sep, (cpu.PSR&0x4)?'N':' ', (cpu.PSR&0x2)?'Z':' ', (cpu.PSR&0x1)?'P':' ');
+#endif
+}
+
+void print_displays(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, bool show_values){
+  DisplayInfoIterator it;
+
+  if (!show_values) {
+    //if ((displays.size()+displaysRegsEnabled)>0) {
+    if (true) {// enabled because wanted to show the lc3CPU even if disabled
+      printf("Num Enb Expression\n");
+    } else {
+      printf("There are no auto-display expressions now.\n");
+    }
+  }
+  //for (it=displays.begin(); it != displays.end(); it++) {
+  for (it=displays.rbegin(); it != displays.rend(); ++it) {
+    printf("%d: ", it->id);
+    if (show_values) {
+      print_variable(it->variable, cpu, mem, src_info);
+    } else {
+      printf("  %c  %s\n", it->isActive ? 'y' : 'n', it->variable->name);
+    }
+  }
+
+  if (!show_values) {
+    printf("1:  %c  lc3CPU\n", displaysRegsEnabled ? 'y' : 'n');
+  } else if (displaysRegsEnabled) {
+    printf("1: lc3CPU = {");
+    print_registers(cpu, mem, src_info, " = ",", ");
+    printf("}\n");
+  }
+}
+
+
+int find_display(int id) {
+  int i;
+  for (i=0; i < displays.size(); i++) {
+    if (id==displays[i].id) {
+      return i;
+    }
+  }
+  return DISPLAY_NOT_FOUND;
+}
+
 void print_locals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, uint16_t scope=0){
   int cnt = 0;
   if (scope==0) {
@@ -431,7 +520,7 @@ void print_locals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, uint16_t sco
   }
   if (cnt==0) {
     printf("No locals.\n");
-  } 
+  }
 }
 void print_args(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, uint16_t scope=0){
   int cnt = 0;
@@ -449,7 +538,7 @@ void print_args(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, uint16_t scope
   }
   if (cnt==0) {
     printf("No args.\n");
-  } 
+  }
 }
 void print_globals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, uint16_t scope=0){
   int cnt = 0;
@@ -460,7 +549,7 @@ void print_globals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, uint16_t sc
   }
   if (cnt==0) {
     printf("No global variables.\n");
-  } 
+  }
 }
 
 void update_backtrace(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
@@ -493,7 +582,7 @@ void update_backtrace(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
 	snprintf(buff, sizeof(buff), "<unknown source location>");
       }
 
-      backtrace.frames.push_back(new FrameInfo(cnt, scope, framePointer, sb->function, buff));  
+      backtrace.frames.push_back(new FrameInfo(cnt, scope, framePointer, sb->function, buff));
 
       // calculate new frame
       cnt++;
@@ -533,17 +622,16 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     printf("Type `help' for a list of commands.\n");
   }
 
-  std::map<std::istring, int16_t *> mytable;
-  mytable["PC"] = (int16_t *)&cpu.PC;
-  mytable["R0"] = &cpu.R[0];
-  mytable["R1"] = &cpu.R[1];
-  mytable["R2"] = &cpu.R[2];
-  mytable["R3"] = &cpu.R[3];
-  mytable["R4"] = &cpu.R[4];
-  mytable["R5"] = &cpu.R[5];
-  mytable["R6"] = &cpu.R[6];
-  mytable["R7"] = &cpu.R[7];
-  mytable["PSR"] = (int16_t *)&cpu.PSR;
+  cpu_special_variables["PC"] = (int16_t *)&cpu.PC;
+  cpu_special_variables["R0"] = &cpu.R[0];
+  cpu_special_variables["R1"] = &cpu.R[1];
+  cpu_special_variables["R2"] = &cpu.R[2];
+  cpu_special_variables["R3"] = &cpu.R[3];
+  cpu_special_variables["R4"] = &cpu.R[4];
+  cpu_special_variables["R5"] = &cpu.R[5];
+  cpu_special_variables["R6"] = &cpu.R[6];
+  cpu_special_variables["R7"] = &cpu.R[7];
+  cpu_special_variables["PSR"] = (int16_t *)&cpu.PSR;
   std::string param1;
   std::string param2;
   uint16_t off = 0;
@@ -570,7 +658,6 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
   int saved_execution_range_start = 0;
   int saved_execution_range_end = INT_INFINITY;
   uint16_t selected_scope = cpu.PC;
-  
 
   show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
 
@@ -582,6 +669,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     int limit_execution_range_end = INT_INFINITY;
     int step_over_calls = 0;
     int in_step_over_mode = 0;
+    int show_help = 0;
 
     if (!*cmd) cmd = last_cmd.c_str();
 #if defined(USE_READLINE)
@@ -590,13 +678,29 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
     std::istringstream incmd(cmd);
     std::string cmdstr;
-   
-    cmdstr.clear(); 
+
+    cmdstr.clear();
     param1.clear();
     param2.clear();
     incmd >> cmdstr;
 
+    if (cmdstr == "help" || cmdstr == "h") {
+      show_help = 1;
+      incmd >> cmdstr;
+#warning HELP is disabled for developement. Enable it before a release!
+      // Leave only general list with commands and  split the help message
+      // to commands and print it together with parsing (see "run" command)
+      //printf("%s", HELP);
+    }
+
     if (cmdstr == "run") {
+      if (show_help) {
+	printf("Initializes the machine and runs the object file\n"
+	    "The arguments are not supported, but simplified input and output redirection can be used:\n"
+	    "   run < file_or_terminal\n"
+	    "This will redirect both input and output (the \">\" and \">>\" are not allowed.\n");
+	continue;
+      }
       incmd >> param1 >> param2;
       if (param1 == "<" && !param2.empty()) {
 	hw.set_tty(open(param2.c_str(), O_RDWR));
@@ -637,20 +741,6 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     } else if (cmdstr == "finish") {
       break_on_return = true;
       instructions_to_run = INT_INFINITY;
-    } else if (cmdstr == "force" || cmdstr == "f") {
-      incmd >> param1 >> param2;
-      off = lexical_cast<uint16_t>(param2);
-      off&= 0xFFFF;
-	
-      if(mytable.count(param1.c_str()))
-	*mytable[param1.c_str()] = off;
-      else if(src_info.symbol.count(param1)) {
-	uint16_t addr = src_info.symbol[param1];
-	mem[addr] = off;
-      } else {
-	uint16_t off2 = lexical_cast<uint16_t>(param1);
-	mem[off2] = off;
-      }
     } else if (cmdstr == "set") {
       incmd >> param1;
 
@@ -660,20 +750,20 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	if (param2 != "=") {
 	  fprintf(stderr, "\"set\" command is only supported for setting simple variables. Syntax:\n"
 	      "   set variable VARIABLE_NAME = NEW_VALUE\n"
-	      "See also \"force\" command for setting of registers and assembler level labels\n");
+	      "The VARIABLE_NAME can be C level variable visible in the current scope or CPU registers or assembler level label.\n");
 	  continue;
 	}
 	incmd >> param2;
 
-	
+
 	VariableInfo* v = src_info.find_variable(selected_scope , param1.c_str());
 	if (v) {
 	  set_variable(v, cpu, mem, src_info, param2);
 	} else {
 	  int16_t value = lexical_cast<int16_t>(param2);
 
-	  if(mytable.count(param1.c_str()))
-	    *mytable[param1.c_str()] = value;
+	  if(cpu_special_variables.count(param1.c_str()))
+	    *cpu_special_variables[param1.c_str()] = value;
 	  else if(src_info.symbol.count(param1)) {
 	    uint16_t addr = src_info.symbol[param1];
 	    mem[addr] = value;
@@ -684,7 +774,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       } else {
 	fprintf(stderr, "\"set\" command is only supported for setting simple variables. Syntax:\n"
 	    "   set variable VARIABLE_NAME = NEW_VALUE\n"
-	    "See also \"force\" command for setting of registers and assembler level labels\n");
+	    "The VARIABLE_NAME can be C level variable visible in the current scope or CPU registers or assembler level label.\n");
       }
     } else if (cmdstr == "dump" || cmdstr == "d"  || cmdstr == "x") {
       if (cmdstr == "x") {
@@ -729,10 +819,10 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       myout << std::setprecision(4) << std::setw(4) << std::setfill('0')
 	    << std::hex << off << ":";
       for(;off<=off2;off++,counter++) {
-	myout << " " << std::hex << std::setprecision(4) << std::setw(4) 
+	myout << " " << std::hex << std::setprecision(4) << std::setw(4)
 	      << std::setfill('0') << mem[off] ;
 	if(counter%8==0 && off!=off2) {
-	  myout << std::endl << std::hex << std::setprecision(4) 
+	  myout << std::endl << std::hex << std::setprecision(4)
 		<< std::setw(4) << std::setfill('0') << off+1 << ":";
 	  counter=0;
 	}
@@ -765,9 +855,6 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	printf("0x%.4x: %.4x: ", start & 0xFFFF, IR & 0xFFFF);
 	cpu.decode(IR);
       }
-    } else if (cmdstr == "help" || cmdstr == "h") {
-//#warning HELP is disabled for developement. Enable it before a release!
-      printf("%s", HELP);
     } else if (cmdstr == "load" || cmdstr == "l" || cmdstr == "file") {
       incmd >> param1;
       uint16_t entry;
@@ -858,7 +945,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	  bp_valid = bp_addr != 0;
 	} catch(bad_lexical_cast &e) {
 	  bp_valid = false;
-	} 
+	}
       } else {
 	// try verbatim number
 	if (param1[0] == '*') {
@@ -868,7 +955,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	}
 	bp_valid = true;
       }
-      
+
       if (bp_valid) {
 	int bt_id = breakpoints.add(bp_addr, make_temporary);
 	//if (make_temporary && bt_id > 0) {
@@ -877,36 +964,34 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       } else {
 	printf("breakpoint specification [%s] is not valid\n", param1.c_str());
       }
-	
+
 
     } else if (cmdstr == "display" || cmdstr == "disp") {
-      // TODO: FixMe: Add way to delete/disable displays
-      // TODO: FixMe: "info dispay" command:
-      // 		Num Enb Expression
-      // 		1:   y  VariableName
-      //
       incmd >> param1;
 
       if (param1.empty()) {
 	// show display list
-	DisplayInfoIterator it;
-	for (it=displays.begin(); it != displays.end(); it++) {
-	  printf("%d: %s = %d\n", it->id, it->name, mem[it->address]+0);
-	}
+	print_displays(cpu, mem, src_info, true);
+      } else if (param1 == "lc3CPU"){
+	// TODO: FixMe: handle the lc3CPU special variable properly
+	displaysRegsEnabled = 1;
       } else {
 	// add to display
-	// TODO: FixMe: handle special names (registers) from mytable
 	VariableInfo* v = src_info.find_variable(selected_scope, param1.c_str());
 
-	if (v) {
-	  displays.push_back(DisplayInfo(++lastDisplay, v->address, strdup(param1.c_str()), v->typeId));
-	} else if (src_info.symbol.count(param1)) {
-	  uint16_t addr = src_info.symbol[param1];
-	  displays.push_back(DisplayInfo(++lastDisplay, addr, strdup(param1.c_str()), 0));
-	} else {
-	  off = lexical_cast<uint16_t>(param1);
-	  displays.push_back(DisplayInfo(++lastDisplay, off, strdup(param1.c_str()), 0));
+	if (!v) {
+	  uint16_t addr;
+	  if (cpu_special_variables.count(param1.c_str())) {
+	    v = new VariableInfo(param1.c_str(), CpuSpecial);
+	  } else if (src_info.symbol.count(param1)) {
+	    addr = src_info.symbol[param1];
+	    v = new VariableInfo(param1.c_str(), AssemblerLabel, 0, addr);
+	  } else {
+	    addr = lexical_cast<uint16_t>(param1);
+	    v = new VariableInfo(param1.c_str(), AssemblerLabel, 0, addr);
+	  }
 	}
+	displays.push_back(DisplayInfo(++lastDisplay+1, v));
       }
     } else if (cmdstr == "print" || cmdstr == "p" || cmdstr == "output") {
       incmd >> param1;
@@ -914,18 +999,18 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
       if (v) {
 	print_variable(v, cpu, mem, src_info);
-      } else if (mytable.count(param1.c_str())) {
+      } else if (cpu_special_variables.count(param1.c_str())) {
 	printf("%s = %.4x (%d)\n", param1.c_str(),
-	       *mytable[param1.c_str()] & 0xFFFF,
-	       *mytable[param1.c_str()] & 0xFFFF);
+	       *cpu_special_variables[param1.c_str()] & 0xFFFF,
+	       *cpu_special_variables[param1.c_str()] & 0xFFFF);
       } else if (src_info.symbol.count(param1)) {
 	uint16_t addr = src_info.symbol[param1];
 	printf("0x%.4x: %.4x (%d)\n", addr & 0xFFFF,
 	       mem[addr] & 0xFFFF, mem[addr] & 0xFFFF);
       } else if (param1 == "all") {
 	std::map<std::istring, int16_t *>::iterator i;
-	for (i = mytable.begin(); i != mytable.end(); ++i) {
-	  printf("%s = %.4x (%d)\n", i->first.c_str(), 
+	for (i = cpu_special_variables.begin(); i != cpu_special_variables.end(); ++i) {
+	  printf("%s = %.4x (%d)\n", i->first.c_str(),
 		 (*i->second) & 0xFFFF, (*i->second) & 0xFFFF);
 	}
       } else {
@@ -943,51 +1028,89 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       int id = lexical_cast<uint16_t>(param1);
       int count = lexical_cast<uint16_t>(param1);
       breakpoints.setIgnoreCount(id, count);
-    } else if (cmdstr == "delete" || cmdstr == "disable") {
-      bool del = (cmdstr=="delete");
-      //param1.clear();
+    } else if (cmdstr == "delete" || cmdstr == "disable" || cmdstr == "undisplay") {
+      bool is_delete_cmd = cmdstr=="delete" || cmdstr=="undisplay";
+      bool is_display_cmd = cmdstr=="undisplay";
+      param1.clear();
       incmd >> param1;
-      if (param1 == "breakpoints") {
-	param1.clear();
-	incmd >> param1;
+
+      if (!is_display_cmd) {
+	if (param1 == "display") {
+	  param1.clear();
+	  incmd >> param1;
+	  is_display_cmd = 1;
+	} else if (param1 == "breakpoints") {
+	  param1.clear();
+	  incmd >> param1;
+	  is_display_cmd = 0;
+	}
       }
       if (param1.empty()) {
-	printf("Breakpoint id expected.\nTry using the `help' command.\n");
+	printf("%s id expected.\nTry using the `help' command.\n", is_display_cmd ? "Display" : "Breakpoint");
       } else {
 	do{
 	  int id = lexical_cast<uint16_t>(param1);
-	  if (del) {
-	    breakpoints.erase(id);
+	  if (!is_display_cmd) {
+	    if (is_delete_cmd) {
+	      breakpoints.erase(id);
+	    } else {
+	      breakpoints.setEnabled(id, false, false, Keep);
+	    }
 	  } else {
-	    breakpoints.setEnabled(id, false, false, Keep);
+#warning handle the remove/enable/disable of lc3CPU variable and it's printing and setting (using lc3CPU.R0, lc3CPU.CC)
+	    int i = find_display(id);
+	    if (i == DISPLAY_NOT_FOUND) {
+	      printf("No display number %d\n", id);
+	    } else {
+		if (is_delete_cmd) {
+		  displays.erase(displays.begin()+i);
+		} else {
+		  displays[i].isActive = 0;
+		}
+	    }
 	  }
 	  param1.clear();
 	  incmd >> param1;
 	} while (!param1.empty());
       }
     } else if (cmdstr == "enable") {
+      bool is_display_cmd = 0;
       BreakpointDisposition disp = Keep;
       //param1.clear();
       incmd >> param1;
-      if (param1 == "breakpoints") {
+      if (param1 == "display") {
 	param1.clear();
 	incmd >> param1;
+	is_display_cmd = 1;
+      } else if (param1 == "breakpoints") {
+	param1.clear();
+	incmd >> param1;
+	is_display_cmd = 0;
       }
-      if (param1 == "once") {
+      if (!is_display_cmd && param1 == "once") {
 	disp = Disable;
 	param1.clear();
 	incmd >> param1;
-      } else if (param1 == "delete") {
+      } else if (!is_display_cmd && param1 == "delete") {
 	disp = Delete;
 	param1.clear();
 	incmd >> param1;
       }
       if (param1.empty()) {
-	printf("Breakpoint id expected.\nTry using the `help' command.\n");
+	printf("%s id expected.\nTry using the `help' command.\n", is_display_cmd ? "Display" : "Breakpoint");
       } else {
 	do{
 	  int id = lexical_cast<uint16_t>(param1);
-	  breakpoints.setEnabled(id, true, disp != Keep, disp);
+	  if (!is_display_cmd) {
+	    breakpoints.setEnabled(id, true, disp != Keep, disp);
+	  } else {
+	    int i = find_display(id);
+	    if (i == DISPLAY_NOT_FOUND) {
+	      printf("No display number %d\n", id);
+	    } else {
+	      displays[i].isActive = 1;
+	    }
+	  }
 	  param1.clear();
 	  incmd >> param1;
 	} while (!param1.empty());
@@ -1030,7 +1153,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	  show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode, selected_scope);
 	}
 	continue;
-    } else if (cmdstr == "bt" || cmdstr == "where") {
+    } else if (cmdstr == "bt" || cmdstr == "backtrace" || cmdstr == "where") {
       update_backtrace(cpu, mem, src_info);
 
       for (int i=0; i < backtrace.frames.size(); i++) {
@@ -1047,7 +1170,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	} catch(bad_lexical_cast &e) {
 	  scope = cpu.PC;
 	}
-	printf("Locals:\n");	
+	printf("Locals:\n");
 	print_locals(cpu, mem, src_info, scope);
 	printf("Args:\n");
 	print_args(cpu, mem, src_info, scope);
@@ -1057,12 +1180,16 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       if (param1 == "breakpoints" || param1 == "b") {
 	breakpoints.showInfo();
 	// FixMe: Todo: add context, to use with "frame" commands, and use it as replacement of cpu.PC
+      } else if (param1 == "display") {
+	print_displays(cpu, mem, src_info, false);
       } else if (param1 == "locals") {
 	print_locals(cpu, mem, src_info, selected_scope);
       } else if (param1 == "args") {
 	print_args(cpu, mem, src_info, selected_scope);
       } else if (param1 == "variables") {
 	print_globals(cpu, mem, src_info, selected_scope);
+      } else if (param1 == "registers" || param1 == "r") {
+	  print_registers(cpu, mem, src_info, "\t","\n");
       }
     } else {
       printf("Bad command `%s'\nTry using the `help' command.\n", cmd);

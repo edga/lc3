@@ -213,7 +213,7 @@ void SourceInfo::add_absolute_variable(VariableKind kind, int typeId, const char
   assert(!(!currentBlock && kind==FunctionStatic));
   assert(symbol.count(assemblerLabel)==1);
 
-  VariableInfo *v = new VariableInfo(sourceName, kind, typeId, true, symbol[assemblerLabel]);
+  VariableInfo *v = new VariableInfo(sourceName, kind, typeId, symbol[assemblerLabel]);
 
   if (kind==FunctionStatic) {
     currentBlock->variables.push_back(v);
@@ -237,7 +237,7 @@ void SourceInfo::add_stack_variable(VariableKind kind, int typeId, const char* s
 	fprintf(stderr, "%*sT%d %s \t// at R5[%d]\n", currentBlockLevel*8+8, "", typeId, sourceName, frameOffset);
   }
 
-  VariableInfo *v = new VariableInfo(sourceName, kind, typeId, false, frameOffset);
+  VariableInfo *v = new VariableInfo(sourceName, kind, typeId, frameOffset);
   if (kind==FunctionParameter) {
     assert(currentFunction);
     currentFunction->args.push_back(v);

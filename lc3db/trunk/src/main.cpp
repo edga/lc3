@@ -117,7 +117,7 @@ int main(int argc, char **argv)
 	     "When no options are specified, enter the interactive simulator\n"
 	     "mode.\n"
 	     "\n"
-	     "Report bugs to <aliguori@cs.utexas.edu>.\n"
+	     "Report bugs to <edgar.lakis@gmail.com>.\n"
 	     , *argv);
       exit(0);
       break;
@@ -148,7 +148,7 @@ int main(int argc, char **argv)
     case 'E':
       {
 	char buffer[1024];
-	sprintf(buffer, "emacs --eval '(gdb \"%s\")'", *argv);
+	sprintf(buffer, "emacs --eval '(gud-gdb \"%s -q -f %s\")'", *argv, argv[optind]);
 	printf("%s\n", buffer);
 	return system(buffer);
       }
