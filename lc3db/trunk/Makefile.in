@@ -28,7 +28,7 @@ PREFIX=@prefix@
 
 LIBS=@LIBS@ @LIBREADLINE@
 CXXFLAGS=-Iinclude @CXXFLAGS@ -DPREFIX=\"$(PREFIX)/\" @DEFS@
-CFLAGS=@CFLAGS@ 
+CFLAGS=@CFLAGS@
 
 OBJ=src/hardware.o src/source_info.o src/breakpoints.o src/memory.o src/main.o arch/lc3.o src/lc3.o src/gdb.o
 
@@ -38,17 +38,21 @@ bin/lc3db: $(OBJ)
 	$(CXX) -o $@ $(CXXFLAGS) $(OBJ) $(LDFLAGS) $(LIBS)
 
 lib/los.obj: bin/lc3db los/los.asm
-	bin/lc3db -c los/los.asm && mv los/los.obj los/los.dbg lib/
+	#bin/lc3db -c los/los.asm && mv los/los.obj los/los.dbg lib/
+	lc3as los/los.asm && mv los/los.obj los/los.dbg lib/
 
 lc3db.1: bin/lc3db
 	help2man -N bin/lc3db > lc3db.1
 
 install: bin/lc3db lib/los.obj #lc3db.1
-	install -D lc3db.sh $(PREFIX)/bin/lc3db
-	install -D bin/lc3db $(PREFIX)/bin/lc3db.bin
+	#install -D lc3db.sh $(PREFIX)/bin/lc3db
+	#install -D bin/lc3db $(PREFIX)/bin/lc3db.bin
+	install -D bin/lc3db $(PREFIX)/bin/lc3db
 	install -D lib/los.obj $(PREFIX)/lib/lc3db/los.obj
 	install -D lib/los.dbg $(PREFIX)/lib/lc3db/los.dbg
 	install -D ddd/init $(PREFIX)/share/lc3db/ddd/init
+	install -d $(PREFIX)/share/lc3db/ddd/themes/
+	install -D ddd/themes/* $(PREFIX)/share/lc3db/ddd/themes/
 	#install -D lc3db.1 $(PREFIX)/share/man/man1/lc3db.1
 
 distclean: really clean

@@ -1,9 +1,10 @@
-// to print lc3regs nicely 1
+// lc3CPU regs in table
 #include "/usr/share/ddd/vsllib/tab.vsl"
 
-make_my_boxes(a) = [a];
-make_my_boxes(a,b) = [a,b];
-make_my_boxes(a,b,c,...) = [[a, b, c]:make_my_boxes(...)];
+make_my_boxes1(a) = [a];
+make_my_boxes1(a,b) = [a,b];
+make_my_boxes1(a,b,c) = [a,b,c];
+make_my_boxes1(a,b,c,...) = [[a, b, c]:make_my_boxes1(...)];
 
 #pragma override old_struct_member
 old_struct_member(...) -> struct_member(...);
@@ -14,4 +15,4 @@ struct_member (...) -> old_struct_member(...);
 old_struct_value(...) -> struct_value(...);
 #pragma override struct_value
 struct_value (...) -> 
-  struct_color(frame(tab(make_my_boxes(...))));
+  struct_color(frame(tab(make_my_boxes1(...))));
