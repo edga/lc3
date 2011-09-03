@@ -151,7 +151,6 @@ static int pic;
 
 static int cseg;
 
-static int stabFileId = 0;
 
 /*
 typedef struct {
@@ -430,6 +429,7 @@ stmt: ASGNB(reg,INDIRB(reg))  "#asgnb\n"  10
 %%
 
 #define ck(i) return (i) ? 0 : LBURG_MAX
+#include "lc3_stab.h"
 
 
 /******************************************************************************
@@ -713,7 +713,7 @@ static void emit2(Node p) {
 			i = 0; /* count things what has to be poped out of the stack (arguments, return val, pRETB) */
 
 			if (specific(LEFT_CHILD(p)->op) == ADDRG+P) { // 
-				print(".LC3GLOBAL %s 0\nLDR R0, R0, #0\n", (LEFT_CHILD(p)->syms[0]->x.name));
+				print(".LC3GLOBAL lc3_%s 0\nLDR R0, R0, #0\n", (LEFT_CHILD(p)->syms[0]->x.name));
 			}
 
 			print("jsrr R0\n");
@@ -737,6 +737,7 @@ static void emit2(Node p) {
 
 			break;
 
+extern void dumptree(Node p);
 /***********Handles spilling a register*********************************/
 /*does it without telling the back end to allocate another register*/
 		case ASGN+U: case ASGN+I: case ASGN+P:
@@ -744,10 +745,10 @@ static void emit2(Node p) {
 				print("; Warning: ASGN+U/I/P\n");
 				break;
 			}
-			print("; <spilling %d>\n",atoi (LEFT_CHILD(p)->syms[0]->x.name));
+			print("; <spilling %s>\n",LEFT_CHILD(p)->syms[0]->x.name);
 			i=atoi(LEFT_CHILD(p)->syms[0]->x.name);
 			lc3_store_far_on_stack(getregnum(RIGHT_CHILD(p)), i);
-			print("; </spilling %d>\n",atoi (LEFT_CHILD(p)->syms[0]->x.name));
+			print("; </spilling %s>\n",LEFT_CHILD(p)->syms[0]->x.name);
 			break;
 
 /***********Conditional Branches---note: unsigned ones dont always work*****/
@@ -1328,13 +1329,17 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 
 	framesize = maxoffset+1;
 
-	print(";;;;;;;;;;;;;;;;;;;;;;;;;;;;%s;;;;;;;;;;;;;;;;;;;;;;;;;;;;\n", f->x.name);
-	if(strcmp("main",f->x.name)==0)
-		print("%s\n", f->x.name);
-	else {
-		print("LC3_GFLAG %s LC3_GFLAG .FILL lc3_%s\n", f->x.name, f->x.name);
-		print("lc3_%s\n", f->x.name);
-	}
+	// Todo: Might indroduce extra code block to mark the start and the end of the function
+	//       The '{' and '}' of the function are not enougth, because they are emited after
+	//       prolog/before epilog respectively
+	print(";;;;;;;;;;;;;;;;;;;;;;;;;;;;%s;;;;;;;;;;;;;;;;;;;;;;;;;;;;\n", f->name);
+	//	printf(";test: function:%s, %s\n", f->name, f->x.name);
+	//if(strcmp("main",f->x.name)==0) {
+	//	print("%s\n", f->x.name);
+	//} else {
+		print("LC3_GFLAG lc3_%s LC3_GFLAG .FILL %s\n", f->x.name, f->name);
+		print("%s\n", f->name);
+	//}
 
 	lc3_addimm(6,6,-2);//allocate space for return val
 	lc3_store(7,6,0);//store return addr
@@ -1355,7 +1360,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 	emitcode();
 
 	if (glevel) {
-		print(".debug line %d:%d\n", stabFileId, lineno);
+		print(".debug line %d:%d\n", lc3_stabFileId, lineno);
 	}
 
 	lc3_store(7,5,3); 	//store ret val on stack	
@@ -1365,7 +1370,7 @@ static void function(Symbol f, Symbol caller[], Symbol callee[], int ncalls) {
 	lc3_pop(7); 	//loading ret addr into r7
 	print("RET\n");
 	if (glevel) {
-		print(".debug lineEnd %d:%d\n", stabFileId, lineno);
+		print(".debug lineEnd %d:%d\n", lc3_stabFileId, lineno);
 	}
 	print("\n");
 }
@@ -1447,9 +1452,10 @@ static void defsymbol(Symbol p) {
 		p->x.name = stringf("L%d_%s", genlabel(1), filename);
 	else if (p->generated)
 		p->x.name = stringf("L%s_%s", p->name, filename);
-	else
-		assert(p->scope != CONSTANTS || isint(p->type) || isptr(p->type)),
-	p->x.name = p->name;
+	else {
+		assert(p->scope != CONSTANTS || isint(p->type) || isptr(p->type));
+		p->x.name = p->name;
+	}
 }
 /************************************************************
   address
@@ -1567,37 +1573,6 @@ static void blkstore(int size, int off, int reg, int tmp) {
 	lc3_store(tmp,reg,off);
 }
 
-static void stabinit(char *, int, char *[]);
-static void stabline(Coordinate *);
-static void stabsym(Symbol);
-
-static char *currentfile;
-
-
-/* stabinit - initialize stab output */
-static void stabinit(char *file, int argc, char *argv[]) {
-	if (file) {
-		currentfile = file;
-		stabFileId++;
-		print(".debug file %d:%s\n", stabFileId, currentfile);
-	}
-}
-
-/* stabline - emit stab entry for source coordinate *cp */
-static void stabline(Coordinate *cp) {
-	if (cp->file && cp->file != currentfile) {
-		currentfile = cp->file;
-		stabFileId++;
-		print(".debug file %d:%s\n", stabFileId, currentfile);
-	}
-	print(".debug line %d:%d\n", stabFileId, cp->y);
-}
-
-/* stabsym - output a stab entry for symbol p */
-static void stabsym(Symbol p) {
-    if (p == cfunc && IR->stabline)
-        (*IR->stabline)(&p->src);
-}
 
 Interface lc3dtuIR = {
 	1, 1, 1,  /* char */
@@ -1635,7 +1610,16 @@ Interface lc3dtuIR = {
 	progend,
 	segment,
 	space,
-	0, 0, 0, stabinit, stabline, stabsym, 0,
+	lc3_stabblock, 0, 0, lc3_stabinit, lc3_stabline, lc3_stabsym, 0,
+	 /*   I(stabblock),
+	      I(stabend),
+	      I(stabfend),
+	      I(stabinit),
+	      I(stabline),
+	      I(stabsym),
+	      I(stabtype)
+         */
+
 	{
 		4,      /*max_unaligned_load */
 		rmap,

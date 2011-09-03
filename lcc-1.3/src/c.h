@@ -22,6 +22,9 @@
 *  		The ischar() macro was changed to work in the case when intsize = 1 byte
 *
 ******************************************************************************/
+#ifndef _C_H
+#define _C_H
+
 #include <assert.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -635,3 +638,4 @@ extern void rmtypes(int);
 extern int ttob(Type);
 extern int variadic(Type);
 
+#endif

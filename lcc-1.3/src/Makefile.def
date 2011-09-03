@@ -2,31 +2,31 @@
 # Makefile (and Makefile.def) -- Makefile for the LC-3 tools
 #
 #  "Copyright (c) 2003 by Steven S. Lumetta."
-# 
+#
 #  Permission to use, copy, modify, and distribute this software and its
-#  documentation for any purpose, without fee, and without written 
+#  documentation for any purpose, without fee, and without written
 #  agreement is hereby granted, provided that the above copyright notice
 #  and the following two paragraphs appear in all copies of this software,
 #  that the files COPYING and NO_WARRANTY are included verbatim with
 #  any distribution, and that the contents of the file README are included
 #  verbatim as part of a file named README with any distribution.
-#  
-#  IN NO EVENT SHALL THE AUTHOR BE LIABLE TO ANY PARTY FOR DIRECT, 
-#  INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT 
-#  OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE AUTHOR 
+#
+#  IN NO EVENT SHALL THE AUTHOR BE LIABLE TO ANY PARTY FOR DIRECT,
+#  INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT
+#  OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE AUTHOR
 #  HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#  
-#  THE AUTHOR SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT 
-#  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR 
-#  A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS" 
-#  BASIS, AND THE AUTHOR NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, 
+#
+#  THE AUTHOR SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT
+#  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+#  A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS"
+#  BASIS, AND THE AUTHOR NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT,
 #  UPDATES, ENHANCEMENTS, OR MODIFICATIONS."
 #
 #  Author:		Steve Lumetta
 #  Version:		1
 #  Creation Date:	18 October 2003
 #  Filename:		Makefile[.def]
-#  History:		
+#  History:
 # 	SSL	2	31 October 2003
 # 		Added lc3convert tool into distribution.
 # 	SSL	1	18 October 2003
@@ -54,7 +54,7 @@ CFLAGS  = -g ${EXTRAFLAGS}
 LDFLAGS = -g ${EXTRAFLAGS}
 LC3AS   = ./lc3as
 
-GENENARED_C = dagcheck.c lc3.c lc3dtu.c # alpha.c sparc.c mips.c x86.c x86linux.c
+GENENARED_C = dagcheck.c lc3.c lc3dtu.c sparc.c x86.c x86linux.c # alpha.c sparc.c mips.c x86.c x86linux.c
 
 librcc_OBJECTS = alloc.o bind.o dag.o decl.o \
 	enode.o error.o expr.o event.o \
@@ -62,19 +62,19 @@ librcc_OBJECTS = alloc.o bind.o dag.o decl.o \
 	main.o output.o prof.o profio.o simp.o stmt.o \
 	string.o sym.o \
 	trace.o tree.o types.o null.o symbolic.o gen.o \
-	bytecode.o stab.o \
+	bytecode.o stab.o lc3_stab.o \
 	$(GENENARED_C:.c=.o)
 
 %.o: %.c
 	${GCC} -c ${CFLAGS} -o $@ $<
 
 $(GENENARED_C): %.c: %.md
-	${TOP_DIR}/lburg/lburg $< $@ 
+	${TOP_DIR}/lburg/lburg $< $@
 
 dist: lburg rcc
 
 distclean:
-	${RM} -f *.o *~ 
+	${RM} -f *.o *~
 	cd ${TOP_DIR}/lburg && ${MAKE} distclean
 
 distclear: distclean
