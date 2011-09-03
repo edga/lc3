@@ -286,7 +286,7 @@ void lc3_stabsym(Symbol p) {
 		return;
 	if (isfunc(p->type)) {
 		//print(".debug function %s(%s):%c%d\n", p->name, p->x.name,
-		print(".debug symbol %c%d:%s:lc3_%s\n",
+		print(".debug symbol %c%d:%s:%s\n",
 			p->sclass == STATIC ? 'f' : 'F', dbxtype(freturn(p->type)),
 			p->name, p->x.name);
 			//p->sclass == STATIC ? 'f' : 'F', emittype(freturn(p->type), 0, 0));
