@@ -37,6 +37,12 @@ all: bin/lc3db lib/los.obj
 bin/lc3db: $(OBJ)
 	$(CXX) -o $@ $(CXXFLAGS) $(OBJ) $(LDFLAGS) $(LIBS)
 
+valgrind_leeks: bin/lc3db
+	DDD_STATE=/home/edgar/.lc3db/ ddd --debugger 'valgrind --log-file=/tmp/log --track-origins=yes --leak-check=full $<' "test/debug_info.obj"
+
+valgrind: bin/lc3db
+	DDD_STATE=/home/edgar/.lc3db/ ddd --debugger 'valgrind --log-file=/tmp/log --db-attach=yes --track-origins=yes $<' "test/debug_info.obj"
+
 lib/los.obj: bin/lc3db los/los.asm
 	#bin/lc3db -c los/los.asm && mv los/los.obj los/los.dbg lib/
 	lc3as los/los.asm && mv los/los.obj los/los.dbg lib/

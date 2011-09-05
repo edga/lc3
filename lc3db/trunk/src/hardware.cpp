@@ -119,6 +119,7 @@ private:
 struct CCR : public MappedWord
 {
   enum { ADDRESS = 0xFFFF };
+  CCR() : ccr(0) { }
   operator int16_t() const { return (int16_t)ccr; }
   operator uint16_t() const { return ccr; }
   CCR &operator=(int16_t value) {

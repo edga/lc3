@@ -419,6 +419,7 @@ VariableInfo* find_variable(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, co
     if (strcmp(name,"lc3CPU")==0 ||
 	strcasecmp(name,"lc3CPU.MCR")==0 ||
 	strcasecmp(name,"MCR")==0) {
+#warning "refactor the variable info into class wich returns the address (depending on the kind of the variable) and is able to print/set the value (depending on it's type)"
       v = new VariableInfo(name, CpuSpecial);
     } else if (cpu_special_variables.count(name)) {
       v = new VariableInfo(name, CpuSpecial);
@@ -480,7 +481,8 @@ void print_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src
     } else if(cpu_special_variables.count(v->name)) {
       val = *cpu_special_variables[v->name] ;
     } else {
-      fprintf(stderr, "Can't set \"%s\" wrong special variable\n", v->name);
+      fprintf(stderr, "Can't print \"%s\" wrong special variable\n", v->name);
+      return;
     }
   } else {
     uint16_t addr = v->address + (v->isAddressAbsolute ? 0 : cpu.R[5]);
@@ -702,6 +704,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 #endif
   mem[0xFFFE] = mem[0xFFFE] | 0x8000;
 
+  char *cmdline = 0;
   const char *cmd = 0;
   std::string last_cmd;
 
@@ -719,7 +722,9 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
   signal(SIGINT, sigproc);
   break_on_return = false;
-  while ((cmd = readline(quiet_mode ? "(gdb) " : "(gdb) "))) try {
+  for(;
+      cmdline = readline(quiet_mode ? "(gdb) " : "(lc3db) ");
+      free(cmdline)) try {
     int instructions_to_run = 0;
     int limit_execution_range_start = 0;
     int limit_execution_range_end = INT_INFINITY;
@@ -727,10 +732,14 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     int in_step_over_mode = 0;
     int show_help = 0;
 
-    if (!*cmd) cmd = last_cmd.c_str();
+    if (!*cmdline) {
+      cmd = last_cmd.c_str();
+    } else {
+      cmd = cmdline;
 #if defined(USE_READLINE)
-    add_history(cmd);
+      add_history(cmd);
 #endif
+    }
 
     std::istringstream incmd(cmd);
     std::string cmdstr;
@@ -740,7 +749,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     param2.clear();
     incmd >> cmdstr;
 
-#warning HELP is disabled for developement. Enable it before a release!
+#warning "HELP is disabled for developement. Enable it before a release!"
 //    if (cmdstr == "help" || cmdstr == "h") {
 //      show_help = 1;
 //      incmd >> cmdstr;
@@ -1029,6 +1038,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	print_variable(v, cpu, mem, src_info);
       }
     } else if (cmdstr == "exit" || cmdstr == "quit" || cmdstr == "q") {
+      free(cmdline);
+      cmdline = 0;
       break;
     } else if (cmdstr == "ignore") {
       //param1.clear();
@@ -1066,7 +1077,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	      breakpoints.setEnabled(id, false, false, Keep);
 	    }
 	  } else {
-#warning handle the remove/enable/disable of lc3CPU variable and it's printing and setting (using lc3CPU.R0, lc3CPU.CC)
+#warning "handle the remove/enable/disable of lc3CPU variable and it's printing and setting (using lc3CPU.R0, lc3CPU.CC)"
 	    int i = find_display(id);
 	    if (i == DISPLAY_NOT_FOUND) {
 	      printf("No display number %d\n", id);
@@ -1170,7 +1181,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       }
     } else if (cmdstr == "info") {
       incmd >> param1;
-#warning fake command for developement. Remove it before a release!
+#warning "fake command for developement. Remove it before a release!"
       if (param1 == "all") {
 	incmd >> param2;
 	uint16_t scope, backup;
@@ -1281,7 +1292,6 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
     }
 
-    last_cmd = cmd;
     repeat_count = 0;
   } catch (bad_lexical_cast &e) {
       printf("Bad command `%s'\nTry using the `help' command.\n", cmd);

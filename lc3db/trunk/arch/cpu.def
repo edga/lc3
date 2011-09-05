@@ -26,6 +26,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include "cpu.hpp"
 #include "util.hpp"
 
@@ -33,6 +34,11 @@ namespace CPU_NAME {
 
 CPU::CPU(Memory &mem) : mem(mem)
 {
+  PC=PSR=USP=SSP=0;
+  for (int i=0; i<8; i++) {
+    R[i] = 0;
+  }
+
   boot();
 }
 

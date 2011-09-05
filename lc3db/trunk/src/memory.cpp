@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <assert.h>
+#include <string.h>
 #include "memory.hpp"
 
 MappedWord::~MappedWord() { }
@@ -68,7 +69,13 @@ MappedWord *Memory::mapped_word(uint16_t index)
 
 Memory::Memory()
 {
-  mem = new int16_t[0x10000];
+  const int size = 0x10000;
+  mem = new int16_t[size];
+#warning "valgrind doesn't like memset/bzero"
+  //bzero(&mem[0], (&mem[size]-&mem[0]));
+  for (int i=0; i < size; i++) {
+    mem[i] = 0;
+  }
 }
 
 Memory::~Memory()
@@ -96,7 +103,7 @@ uint16_t Memory::load(const std::string &filename)
 #endif
   ::read(fd, &mem[PC], stats.st_size - 2);
 #if __BYTE_ORDER == __LITTLE_ENDIAN
-  for (i = PC; i < (PC + stats.st_size - 2); i++) {
+  for (i = PC; i < (PC + stats.st_size/2 - 1); i++) {
     mem[i] = ((mem[i] << 8) | ((mem[i] >> 8) & 0x00FF));
   }
 #endif
