@@ -100,94 +100,62 @@ typedef std::vector<DisplayInfo>::reverse_iterator DisplayInfoIterator;
 const int DISPLAY_NOT_FOUND = -1;
 
 
-const char * HELP =
-"Commands: - shortcuts shown in ()\n"
-" compile <filename.asm>\n"
-"   Assembles filename.asm.\n\n"
+const char * HELP_LIST =
+"The list of available commands. The commands are described in following format:\n"
+"       command|alias1|alias2 ARGUMENT [OPTIONAL_ARGUMENT]      -- description.\n"
+"  The `|' denotes alternative command names.\n"
+"  The WORDS_IN_CAPS denotes command arguments.\n"
+"  The text between `[' and ']' characters denotes optional part of the command.\n"
+"  The text after `--' is short description of the command.\n"
+"Use `help' command to get more information about particular command.\n\n"
 
-" tty <terminal_device>\n"
-"   Use pseudoterminal instead of stdin/stdout.\n\n"
+"  help|h [COMMAND]             -- Displays this help screen or help for the COMMAND\n"
+"  compile FILENAME.ASM         -- Assembles FILENAME.ASM\n"
+"  load|file FILENAME.OBJ       -- Loads the FILENAME.OBJ for debugging\n"
+"  tty TERMINAL                 -- Redirect the input/output of the debugged program to TERMINAL.\n"
+"  quit|q|exit                  -- Quits the debugging session.\n"
 
-" backtrace (bt) (where)\n"
-"   Show the backtrace (function call stack).\n\n"
+"\n=== Running ===\n"
+"  run                          -- Runs the loaded program\n"
+"  continue|cont|c              -- Continue execution after breakpoint\n"
+"  next|n                       -- Steps over the next source line (useful to step over the function calls)\n"
+"  nexti|ni                     -- Steps over the next instruction (useful to step over TRAP and JSR instructions)\n"
+"  step|s [COUNT]               -- Executes the next COUNT steps (line changes of the source).\n"
+"  stepi|si [COUNT]             -- Executes the next COUNT instruction.\n"
+"  finish                       -- Continue until return\n"
+"== Breakpoints ==\n"
+"  break|b|tbreak|tb LOCATION   -- Set breakpoint\n"
+"  info breakpoints|b           -- Show breakpoints\n"
+"  ignore BREAKPOINT_ID COUNT   -- Ignore the breakpoint the next COUNT times\n"
+"  delete breakpoints BREAKPOINT_ID [BREAKPOINT_ID...]                 -- Delete the breakpoints\n"
+"  disable breakpoints BREAKPOINT_ID [BREAKPOINT_ID...]                -- Disable the breakpoints\n"
+"  enable [breakpoints] [once|delete] BREAKPOINT_ID [BREAKPOINT_ID...] -- Enable the breakpoints\n"
 
-" break (b) <addr|sym>\n"
-"   Set breakpoint at address <addr> or at the label indicated by sym.\n\n"
+"\n=== Examining the state of the program ===\n"
+"  print|p|output EXPRESSION    -- Print the value of the EXPRESSION\n"
+"  info locals                  -- Show local variables of current stack frame\n"
+"  info args                    -- Show arguments of current function\n"
+"  info variables|var           -- Show global variables\n"
+"  info registers|r             -- CPU and some special memory mapped registers\n"
+"== Expressions displayed on stop ==\n"
+"  display [EXPRESSION]         -- Adds expression to be displayed each time the program is stopped\n"
+"  info display                 -- Show variables displayed when program stops\n"
+"  delete display DISPLAY_ID [DISPLAY_ID...]     -- Delete the display expression\n"
+"  disable display DISPLAY_ID [DISPLAY_ID...]    -- Disable the display expression\n"
+"  enable display DISPLAY_ID [DISPLAY_ID...]     -- Enable the display expression\n"
+"== Memory ==\n"
+"  x|dump|d START END           -- Examine the content of the memory\n"
+"  x regs                       -- Examine the contents of registers\n"
+"  disassemble|dasm START END   -- Disassemble content of the memory\n"
+"== Call stack ==\n"
+"  backtrace|bt|where           -- Show the backtrace (function call stack)\n"
+"  frame [FRAMENO]              -- Select/show call stack frame\n"
+"  down [COUNT]                 -- Select frame below the current (called function)\n"
+"  up [COUNT]                   -- Select frame above the current (caller function)\n"
 
-" continue (c)\n"
-"   Executions instructions until halt.\n\n"
-
-" display [expression]\n"
-"   Adds expressions to automatic display list. The expressions will be printed on each stop.\n\n"
-
-" disassemble (dasm) <start> <end>\n"
-"   Disassemble insructions from address <start> to <end>.\n\n"
-
-" dump (d) <start> <end>\n"
-"   Dump the memory from address start to end.\n\n"
-
-" finish\n"
-"   Continue untill return\n\n"
-
-" force (f) <symbol> <value>\n"
-"   Sets the data represented by symbol to value\n\n"
-
-" frame [<number>]\n"
-"   Show the currently selected frame (of function call stack). Or frame with given number.\n\n"
-
-" down [<number>]\n"
-"   Select the frame below.\n\n"
-
-" up [<number>]\n"
-"   Select the frame above.\n\n"
-
-
-" info args\n"
-"   Show the arguments in the current scope (see backtrace/frame/up/down commands)\n\n"
-
-" info breakpoint\n"
-"   Show all the breakpoints\n\n"
-
-" info locals\n"
-"   Show the local variables in the current scope (see backtrace/frame/up/down commands)\n\n"
-
-" info variables\n"
-"   Show the global scoped variables (also file static)\n\n"
-
-" load (l) <filename.obj>\n"
-"   Loads a file named filename.obj. It will also attempt to read a debug\n"
-"   named filename.dbg.  The PC will be set to where the file was loaded.\n\n"
-
-" next (n)\n"
-"   Steps over the next source line (useful to skip the function calls)\n\n"
-
-" nexti (ni)\n"
-"   Steps over the next instruction (useful for TRAP and JSR commands)\n\n"
-
-" print (p) <data>\n"
-"   Prints the value of the symbol, register, or address specified by\n"
-"   data.  Use \"lc3CPU\" as <data> to see contents of registers.\n\n"
-
-" run\n"
-"   Initializes the machine and runs the operating system.\n\n"
-
-" set variable <varname> = <new_value>\n"
-"   Command is only supported for setting simple variables.\n\n"
-
-" step (s) [num]\n"
-"   Executes the next num steps (line changes of the source).\n\n"
-
-" stepi (si) [num]\n"
-"   Executes the next num instruction.\n\n"
-
-" quit (q) exit\n"
-"   Quits the simulation session.\n\n"
-
-" x regs\n"
-"   Examine contents of registers.\n\n"
-
-" help (h)\n"
-"   Displays this help screen\n";
+"\n=== Changing the state (variables/registers) ===\n"
+"  set variable|var NAME = NEW_VALUE        -- Set the variable/register\n"
+;
 
 #define MARKER "\x1a\x1a"
 
@@ -598,6 +566,7 @@ void print_globals(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, uint16_t sc
   }
 }
 
+/* Construct backtrace for current location */
 void update_backtrace(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info){
   static char buff[512];
 
@@ -732,6 +701,12 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     int in_step_over_mode = 0;
     int show_help = 0;
 
+#define CMD_HELP(msg) \
+      if (show_help) { \
+	printf msg; \
+	continue; \
+      }
+
     if (!*cmdline) {
       cmd = last_cmd.c_str();
     } else {
@@ -749,23 +724,35 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     param2.clear();
     incmd >> cmdstr;
 
-#warning "HELP is disabled for developement. Enable it before a release!"
-//    if (cmdstr == "help" || cmdstr == "h") {
-//      show_help = 1;
-//      incmd >> cmdstr;
-//      // Leave only general list with commands and  split the help message
-//      // to commands and print it together with parsing (see "run" command)
-//      //printf("%s", HELP);
-//    }
+#warning "TODO: Make machine initialization and loading of the system and user .obj files intuitive"
+    /* 1. On startup the system is initialized with lc3-os.obj
+     * 2. Add special command to "reinitialize"
+     * 3. Obj file specified as cmd line arg is loaded and shown at the begining
+     * 4. Obj file specified from GUI is used the same way.
+     * 5. Allow to debug initialization code?
+     */
+
+    if (cmdstr == "help" || cmdstr == "h") {
+      cmdstr.clear();
+      incmd >> cmdstr;
+      if (cmdstr.empty()) {
+	// show general help with list of supported commands
+	printf("%s", HELP_LIST);
+	continue;
+      } else {
+	// display help for specific command
+	show_help = 1;
+      }
+    }
 
     if (cmdstr == "run") {
-      if (show_help) {
-	printf("Initializes the machine and runs the object file\n"
-	    "The arguments are not supported, but simplified input and output redirection can be used:\n"
-	    "   run < file_or_terminal\n"
-	    "This will redirect both input and output (the \">\" and \">>\" are not allowed.\n");
-	continue;
-      }
+      // TODO: think about the proper load/run scenario (where to put the lc3os code and how to set breakpoints and initialize PC)
+      CMD_HELP(
+	  ("Runs the CPU from current PC location (the object file should be loaded beforehand with `file' command).\n"
+	   "The arguments are not supported, but simplified input and output redirection can be used:\n"
+	   "   run < TERMINAL\n"
+	   "This will redirect both input and output (the \">\" and \">>\" are not allowed).\n"
+	  ))
       incmd >> param1 >> param2;
       if (param1 == "<" && !param2.empty()) {
 	hw.set_tty(open(param2.c_str(), O_RDWR));
@@ -804,18 +791,22 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	printf("Could not find los.obj\n");
       }
     } else if (cmdstr == "finish") {
+      CMD_HELP(("Continue until return.\n"))
       break_on_return = true;
       instructions_to_run = INT_INFINITY;
     } else if (cmdstr == "set") {
       incmd >> param1;
 
-      if (param1 == "variable") {
+      if (param1 == "variable" || param1 == "var") {
+	CMD_HELP(
+	    ("  set variable|var NAME = NEW_VALUE\n"
+	     "Sets the variable/register. Currently only simple variables can be set.\n"
+	     "The NAME can be C level variable visible in the current scope or CPU registers or assembler level label.\n"
+	    ))
 	param1.clear();
 	incmd >> param1 >> param2;
 	if (param2 != "=") {
-	  fprintf(stderr, "\"set\" command is only supported for setting simple variables. Syntax:\n"
-	      "   set variable VARIABLE_NAME = NEW_VALUE\n"
-	      "The VARIABLE_NAME can be C level variable visible in the current scope or CPU registers or assembler level label.\n");
+	  fprintf(stderr, "\"set\" command is only supported for setting simple variables. See: \"help set variable\"\n");
 	  continue;
 	}
 	incmd >> param2;
@@ -828,14 +819,16 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	  fprintf(stderr, "variable \"%s\" not found\n", param1.c_str());
 	}
       } else {
-	fprintf(stderr, "\"set\" command is only supported for setting simple variables. Syntax:\n"
-	    "   set variable VARIABLE_NAME = NEW_VALUE\n"
-	    "The VARIABLE_NAME can be C level variable visible in the current scope or CPU registers or assembler level label.\n");
+	  fprintf(stderr, "\"set\" command is only supported for setting simple variables. See: \"help set variable\"\n");
       }
     } else if (cmdstr == "dump" || cmdstr == "d"  || cmdstr == "x") {
+      // TODO: the format of `x' is incompatible with gdb
+      // TODO: the `dump' doesn't exist in gdb
+      // The commands are not listed in any tutorials so are not important for compatibility and should be changed to comply with gdb
       if (cmdstr == "x") {
 	incmd >> param2 >> param1;
 	if (param2 == "regs" || param1 == "regs") {
+	  CMD_HELP(("Shows content of the registers\n"))
 	  for (int i = 0; i < 8; i++) {
 	    if (i == 4) printf("\n");
 	    printf("R%d:  %.4x (%5d)  ", i,
@@ -865,6 +858,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       } else {
 	incmd >> param1 >> param2;
       }
+      CMD_HELP(("  dump START_ADDR END_ADDR\n"
+	    "Shows the content of the memory\n"))
       off = lexical_cast<uint16_t>(param1);
       uint16_t off2 = lexical_cast<uint16_t>(param2);
       uint16_t counter = 1;
@@ -884,16 +879,29 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       myout << std::endl;
       printf("%s",myout.str().c_str());
     } else if (cmdstr == "compile") {
+      CMD_HELP((
+	    "  compile FILENAME.ASM\n"
+	    "Assembles FILENAME.ASM.\n\n"
+	    ))
       incmd >> param1;
       const char *args[] = { "", param1.c_str(), NULL };
       lc3_asm(2, args);
     } else if (cmdstr == "tty") {
+      CMD_HELP((
+	    "  tty TERMINAL\n"
+	    "Redirect the input/output of the debugged program to TERMINAL.\n"
+	    ))
       incmd >> param1;
       hw.set_tty(open(param1.c_str(), O_RDWR));
     } else if (cmdstr == "continue" || cmdstr == "c" || cmdstr=="cont") {
+      CMD_HELP(("Continues execution untill the breakpoint is hit or machine is halted.\n"))
       printf("running\n");
       instructions_to_run = INT_INFINITY;
     } else if (cmdstr == "disassemble" || cmdstr == "dasm") {
+      CMD_HELP(
+	  ("  disassemble START END\n"
+	   "Disassemble insructions from address START to END.\n"
+	  ))
       incmd >> param1 >> param2;
       uint16_t start = lexical_cast<uint16_t>(param1);
       uint16_t end  = lexical_cast<uint16_t>(param2);
@@ -909,7 +917,13 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	printf("0x%.4x: %.4x: ", start & 0xFFFF, IR & 0xFFFF);
 	cpu.decode(IR);
       }
-    } else if (cmdstr == "load" || cmdstr == "l" || cmdstr == "file") {
+    } else if (cmdstr == "load" || cmdstr == "file") {
+      // TODO: think about the proper load/run scenario (where to put the lc3os code and how to set breakpoints and initialize PC)
+      CMD_HELP(
+	  ("  load|file FILENAME.OBJ\n"
+	   "Loads the content of the FILENAME.OBJ for the debugging.\n"
+           "The debug information will be tried to load from FILENAME.DBG\n"
+	  ))
       incmd >> param1;
       uint16_t entry;
       uint16_t pc = load_prog(param1.c_str(), src_info, mem, &entry);
@@ -926,6 +940,10 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	printf("Could not open %s\n", param1.c_str());
       }
     } else if (cmdstr == "stepi" || cmdstr == "si") {
+      CMD_HELP(
+	  ("  stepi [COUNT]\n"
+	   "Execute single instruction (or COUNT instructions if specified).\n"
+	  ))
       incmd >> param1;
       try {
 	instructions_to_run = lexical_cast<uint16_t>(param1);
@@ -933,10 +951,19 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	instructions_to_run = 1;
       }
     } else if (cmdstr == "nexti" || cmdstr == "ni") {
-  l_handle_nexti:
+      CMD_HELP(
+	  ("  nexti|ni\n"
+	   "Execute single instruction similar to `stepi' command, but while performing call instruction execute until subroutine returns.\n"
+	   "NOTE: the COUNT argument is not yet supported by nexti.\n"
+	  ))
       instructions_to_run = 1;
       step_over_calls = 1;
     } else if (cmdstr == "step" || cmdstr == "s") {
+      CMD_HELP(
+	  ("  step|s [COUNT]\n"
+	   "Execute single line of source code (or COUNT lines if specified).\n"
+	   "NOTE: the COUNT argument is not yet supported for C language.\n"
+	  ))
       incmd >> param1;
       int repeat;
       try {
@@ -957,10 +984,16 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	instructions_to_run = INT_INFINITY;
       }
     } else if (cmdstr == "next" || cmdstr == "n") {
+      CMD_HELP(
+	  ("  next|n\n"
+	   "Execute single line of source code. If the line contains the function call, functions are executed until return.\n"
+	   "NOTE: the COUNT argument is not yet supported for C language.\n"
+	  ))
       SourceLocation line = src_info.find_source_location_absolute(cpu.PC);
       if (line.lineNo <= 0 || !line.isHLLSource) {
 	// No hi level line at current location
-	goto l_handle_nexti;
+	instructions_to_run = 1;
+	step_over_calls = 1;
       } else {
 	instructions_to_run = INT_INFINITY;
 	step_over_calls = 1;
@@ -968,6 +1001,10 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	limit_execution_range_end = line.lastAddr;
       }
     } else if (cmdstr == "ignore") {
+      CMD_HELP(
+	  ("  ignore BREAKPOINT_ID COUNT\n"
+	   "Ignore the breakpoint the next COUNT times.\n"
+	  ))
       incmd >> param1 >> param2;
       int id = lexical_cast<uint16_t>(param1);
       int count = lexical_cast<uint16_t>(param2);
@@ -984,6 +1021,12 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       size_t colPos;
       incmd >> param1;
       bool make_temporary = (cmdstr[0] == 't');
+      CMD_HELP(
+          ("  break SYMBOL\n"
+           "  break FILENAME:LINENO\n"
+           "  break ADDRESS\n"
+           "Creates the breakpoint (temporary breakpoint is created with `tbreak' command).\n"
+          ))
 
       if (src_info.symbol.count(param1)) {
 	// Symbol
@@ -1021,6 +1064,11 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
 
     } else if (cmdstr == "display" || cmdstr == "disp") {
+      CMD_HELP(
+          ("  display [VARIABLE]\n"
+           "Add the VARIABLE to the display list, to be printed each time the program stops.\n"
+           "Without arguments shows the current display list.\n"
+          ))
       incmd >> param1;
 
       if (param1.empty()) {
@@ -1032,27 +1080,43 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	if (v) displays.push_back(DisplayInfo(++lastDisplay, v));
       }
     } else if (cmdstr == "print" || cmdstr == "p" || cmdstr == "output") {
+      CMD_HELP(
+          ("  print EXPRESSION\n"
+           "Show the value of the EXPRESSION. Currently the expression can only be single variable/register without any operators.\n"
+          ))
       incmd >> param1;
       VariableInfo* v = find_variable(cpu, mem, src_info, param1.c_str(), selected_scope);
       if (v) {
 	print_variable(v, cpu, mem, src_info);
       }
     } else if (cmdstr == "exit" || cmdstr == "quit" || cmdstr == "q") {
+      CMD_HELP(("Quits the debugger.\n"))
       free(cmdline);
       cmdline = 0;
       break;
-    } else if (cmdstr == "ignore") {
-      //param1.clear();
-      //param2.clear();
-      incmd >> param1 >> param2;
-      int id = lexical_cast<uint16_t>(param1);
-      int count = lexical_cast<uint16_t>(param1);
-      breakpoints.setIgnoreCount(id, count);
     } else if (cmdstr == "delete" || cmdstr == "disable" || cmdstr == "undisplay") {
       bool is_delete_cmd = cmdstr=="delete" || cmdstr=="undisplay";
       bool is_display_cmd = cmdstr=="undisplay";
       param1.clear();
       incmd >> param1;
+      if (show_help) { // Help:
+        if (cmdstr == "undisplay") {
+          CMD_HELP(
+              ("  undisplay DISPLAY_ID [DISPLAY_ID...]\n"
+               "Delete the displays with specified IDs. This is alias for `delete display' command.\n"
+               "The ID numbers corresponding to each display can be found by `info display' command.\n"
+              ))
+        } else {
+          CMD_HELP(
+              ("  %1$s display DISPLAY_ID [DISPLAY_ID...]\n"
+               "  %1$s breakpoints BREAKPOINT_ID [BREAKPOINT_ID...]\n"
+               "%2$s display/breakpoint.\n"
+               "The ID numbers corresponding to each display/breakpoint can be found by `info display/breakpoints' command.\n"
+              , cmdstr.c_str(), is_delete_cmd ? "Delete" : "Disable"
+              ))
+        }
+      }
+
 
       if (!is_display_cmd) {
 	if (param1 == "display") {
@@ -1094,6 +1158,13 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	} while (!param1.empty());
       }
     } else if (cmdstr == "enable") {
+      CMD_HELP(
+          ("  enable display DISPLAY_ID [DISPLAY_ID...]\n"
+           "  enable breakpoints [once|delete] BREAKPOINT_ID [BREAKPOINT_ID...]\n"
+           "  enable [once|delete] BREAKPOINT_ID [BREAKPOINT_ID...]\n"
+           "Enables display/breakpoint. When enabling breakpoints additional modifiers can be used. The breakpoint will be disabled on first hit if `once' modifier is used, and deleted on first hit if `delete' is specified.\n"
+           "The ID numbers corresponding to each display/breakpoint can be found by `info display/breakpoints' command.\n"
+          ))
       bool is_display_cmd = 0;
       BreakpointDisposition disp = Keep;
       //param1.clear();
@@ -1147,13 +1218,25 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	int frame_count = backtrace.frames.size();
 
 	if (cmdstr == "frame") {
+          CMD_HELP(
+              ("  frame [FRAMENO]\n"
+               "Selects and prints the FRAMENO stack frame. With no arguments prints the current frame.\n"
+              ))
 	  //selected_frame = backtrace.frames.begin() + ((N==-1) ? 0 : N);
 	  selected_frame_id = ((N==-1) ? selected_frame_id : N);
 	} else if (cmdstr == "up") {
+          CMD_HELP(
+              ("  up [COUNT]\n"
+               "Select and print the frame above (the caller of the current frame). With argument select frame COUNT frames apart.\n"
+              ))
 	  selected_frame_id += ((N==-1) ? 1 : N);
 	  //selected_frame += (N==-1) ? 1 : N;
 	  //selected_frame = backtrace.frames.begin() + (*selected_frame)->id +((N==-1) ? 1 : N);
 	} else if (cmdstr == "down") {
+          CMD_HELP(
+              ("  down [COUNT]\n"
+               "Select and print the frame below (the one called by the current frame). With argument select frame COUNT frames apart.\n"
+              ))
 	  selected_frame_id -= ((N==-1) ? 1 : N);
 	  //selected_frame = backtrace.frames.begin() + (*selected_frame)->id -((N==-1) ? 1 : N);
 	  //selected_frame -= (N==-1) ? 1 : N;
@@ -1174,6 +1257,9 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	}
 	continue;
     } else if (cmdstr == "bt" || cmdstr == "backtrace" || cmdstr == "where") {
+      CMD_HELP(
+          ("  backtrace|bt|where\n"
+           "Print the call frames of the stack at current execution location.\n"))
       update_backtrace(cpu, mem, src_info);
 
       for (int i=0; i < backtrace.frames.size(); i++) {
@@ -1197,6 +1283,15 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	printf("Variables:\n");
 	print_globals(cpu, mem, src_info, scope);
       }
+      CMD_HELP(
+          ("  info breakpoints|b        -- user settable breakpoints\n"
+           "  info display              -- variables displayed when program stops\n"
+           "  info locals               -- local variables of current stack frame\n"
+           "  info args                 -- arguments of current function\n"
+           "  info variables|var        -- global and file-static variables\n"
+           "  info registers|r          -- CPU and some special memory mapped registers\n"
+           "Show various information about the state of the debugged program.\n"
+          ))
       if (param1 == "breakpoints" || param1 == "b") {
 	breakpoints.showInfo();
 	// FixMe: Todo: add context, to use with "frame" commands, and use it as replacement of cpu.PC
@@ -1206,7 +1301,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	print_locals(cpu, mem, src_info, selected_scope);
       } else if (param1 == "args") {
 	print_args(cpu, mem, src_info, selected_scope);
-      } else if (param1 == "variables") {
+      } else if (param1.compare(0, 3, "var") == 0) {
 	print_globals(cpu, mem, src_info, selected_scope);
       } else if (param1 == "registers" || param1 == "r") {
 	  print_registers(cpu, mem, src_info, "\t","\n");
@@ -1336,4 +1431,4 @@ readline (const char* prompt)
 }
 
 #endif
-// vim: sw=2 si:
+// vim: sw=2 si et:
