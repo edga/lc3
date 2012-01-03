@@ -260,9 +260,13 @@ struct inst_t {
 static int pass, line_num, num_errors, saw_orig, code_loc, saw_end;
 static int code_orig;
 static inst_t inst;
+static char *last_label = NULL;
+static char *last_cmd = NULL;
+static char instr_disasm[512];
 static FILE* symout;
 static FILE* objout;
 static FILE* dbgout;
+static FILE* lstout;
 /*
  * "base.bin" file used to initialize content of memory in VHDL code.
  * Each generated word is output on separate line as sequence of 16 characters ('1' or '0')
@@ -340,54 +344,54 @@ O_     {ENDLINE}
 %%
 
     /* rules for real instruction opcodes */
-ADD       {inst.op = OP_ADD;   BEGIN (ls_operands);}
-AND       {inst.op = OP_AND;   BEGIN (ls_operands);}
-BR{CCODE} {inst.op = OP_BR;    parse_ccode (yytext + 2); BEGIN (ls_operands);}
-JMP       {inst.op = OP_JMP;   BEGIN (ls_operands);}
-JSRR      {inst.op = OP_JSRR;  BEGIN (ls_operands);}
-JSR       {inst.op = OP_JSR;   BEGIN (ls_operands);}
-LDI       {inst.op = OP_LDI;   BEGIN (ls_operands);}
-LDR       {inst.op = OP_LDR;   BEGIN (ls_operands);}
-LD        {inst.op = OP_LD;    BEGIN (ls_operands);}
-LEA       {inst.op = OP_LEA;   BEGIN (ls_operands);}
-NOT       {inst.op = OP_NOT;   BEGIN (ls_operands);}
-RTI       {inst.op = OP_RTI;   BEGIN (ls_operands);}
-STI       {inst.op = OP_STI;   BEGIN (ls_operands);}
-STR       {inst.op = OP_STR;   BEGIN (ls_operands);}
-ST        {inst.op = OP_ST;    BEGIN (ls_operands);}
-TRAP      {inst.op = OP_TRAP;  BEGIN (ls_operands);}
+ADD       {inst.op = OP_ADD;  last_cmd = "ADD"; BEGIN (ls_operands);}
+AND       {inst.op = OP_AND;  last_cmd = "AND"; BEGIN (ls_operands);}
+BR{CCODE} {inst.op = OP_BR;   parse_ccode (yytext + 2); BEGIN (ls_operands);}
+JMP       {inst.op = OP_JMP;  last_cmd = "JMP"; BEGIN (ls_operands);}
+JSRR      {inst.op = OP_JSRR; last_cmd = "JSRR"; BEGIN (ls_operands);}
+JSR       {inst.op = OP_JSR;  last_cmd = "JSR"; BEGIN (ls_operands);}
+LDI       {inst.op = OP_LDI;  last_cmd = "LDI"; BEGIN (ls_operands);}
+LDR       {inst.op = OP_LDR;  last_cmd = "LDR"; BEGIN (ls_operands);}
+LD        {inst.op = OP_LD;   last_cmd = "LD";  BEGIN (ls_operands);}
+LEA       {inst.op = OP_LEA;  last_cmd = "LEA"; BEGIN (ls_operands);}
+NOT       {inst.op = OP_NOT;  last_cmd = "NOT"; BEGIN (ls_operands);}
+RTI       {inst.op = OP_RTI;  last_cmd = "RTI"; BEGIN (ls_operands);}
+STI       {inst.op = OP_STI;  last_cmd = "STI"; BEGIN (ls_operands);}
+STR       {inst.op = OP_STR;  last_cmd = "STR"; BEGIN (ls_operands);}
+ST        {inst.op = OP_ST;   last_cmd = "ST";  BEGIN (ls_operands);}
+TRAP      {inst.op = OP_TRAP; last_cmd = "TRAP"; BEGIN (ls_operands);}
 
     /* rules for trap pseudo-ols */
-GETC      {inst.op = OP_GETC;  BEGIN (ls_operands);}
-HALT      {inst.op = OP_HALT;  BEGIN (ls_operands);}
-IN        {inst.op = OP_IN;    BEGIN (ls_operands);}
-OUT       {inst.op = OP_OUT;   BEGIN (ls_operands);}
-PUTS      {inst.op = OP_PUTS;  BEGIN (ls_operands);}
-PUTSP     {inst.op = OP_PUTSP; BEGIN (ls_operands);}
+GETC      {inst.op = OP_GETC; last_cmd = "GETC"; BEGIN (ls_operands);}
+HALT      {inst.op = OP_HALT; last_cmd = "HALT"; BEGIN (ls_operands);}
+IN        {inst.op = OP_IN;   last_cmd = "IN"; BEGIN (ls_operands);}
+OUT       {inst.op = OP_OUT;  last_cmd = "OUT"; BEGIN (ls_operands);}
+PUTS      {inst.op = OP_PUTS; last_cmd = "PUTS"; BEGIN (ls_operands);}
+PUTSP     {inst.op = OP_PUTSP;last_cmd = "PUTSP"; BEGIN (ls_operands);}
 
     /* rules for non-trap pseudo-ops */
-\.FILL    {inst.op = OP_FILL;  BEGIN (ls_operands);}
-RET       {inst.op = OP_RET;   BEGIN (ls_operands);}
-\.STRINGZ {inst.op = OP_STRINGZ; BEGIN (ls_operands);}
+\.FILL    {inst.op = OP_FILL; last_cmd = ".FILL"; BEGIN (ls_operands);}
+RET       {inst.op = OP_RET;  last_cmd = "RET"; BEGIN (ls_operands);}
+\.STRINGZ {inst.op = OP_STRINGZ; last_cmd = ".STRINGZ"; BEGIN (ls_operands);}
 
     /* rules for directives */
-\.BLKW    {inst.op = OP_BLKW; BEGIN (ls_operands);}
-\.END     {saw_end = 1;       BEGIN (ls_finished);}
-\.ORIG    {inst.op = OP_ORIG; BEGIN (ls_operands);}
+\.BLKW    {inst.op = OP_BLKW; last_cmd = NULL; BEGIN (ls_operands);}
+\.END     {saw_end = 1;       last_cmd = NULL; BEGIN (ls_finished);}
+\.ORIG    {inst.op = OP_ORIG; last_cmd = NULL; BEGIN (ls_operands);}
 
  /***********************************************/
  /*		DTU extensions			*/
-SLL       {inst.op = OP_SLL;   BEGIN (ls_operands);}
-SRA       {inst.op = OP_SRA;   BEGIN (ls_operands);}
-DIV       {inst.op = OP_DIV;   BEGIN (ls_operands);}
-MOD       {inst.op = OP_MOD;   BEGIN (ls_operands);}
-MUL       {inst.op = OP_MUL;   BEGIN (ls_operands);}
+SLL       {inst.op = OP_SLL;   last_cmd = "SLL"; BEGIN (ls_operands);}
+SRA       {inst.op = OP_SRA;   last_cmd = "SRA"; BEGIN (ls_operands);}
+DIV       {inst.op = OP_DIV;   last_cmd = "DIV"; BEGIN (ls_operands);}
+MOD       {inst.op = OP_MOD;   last_cmd = "MOD"; BEGIN (ls_operands);}
+MUL       {inst.op = OP_MUL;   last_cmd = "MUL"; BEGIN (ls_operands);}
 
     /* pseudo-ops */
-NOP       {inst.op = OP_NOP;   BEGIN (ls_operands);}
+NOP       {inst.op = OP_NOP;   last_cmd = "NOP"; BEGIN (ls_operands);}
 
     /* directives */
-\.BLKWTO  {inst.op = OP_BLKWTO; BEGIN (ls_operands);}
+\.BLKWTO  {inst.op = OP_BLKWTO;last_cmd = ".BLKWTO";  BEGIN (ls_operands);}
 
  /*						*/
  /***********************************************/
@@ -491,6 +495,11 @@ main (int argc, char** argv)
         fprintf (stderr, "Could not open %s for writing.\n", fname);
 	return 2;
     }
+    strcpy (ext, ".lst");
+    if ((lstout = fopen (fname, "w")) == NULL) {
+        fprintf (stderr, "Could not open %s for writing.\n", fname);
+	return 2;
+    }
     strcpy (ext, ".vconst");
     if ((vcout = fopen (fname, "w")) == NULL) {
         fprintf (stderr, "Could not open %s for writing.\n", fname);
@@ -591,6 +600,9 @@ main (int argc, char** argv)
 static void
 new_inst_line () 
 {
+    free(last_label);
+    last_label = NULL;
+    instr_disasm[0] = 0;
     inst.op = OP_NONE;
     inst.ccode = CC_;
     line_num++;
@@ -762,17 +774,23 @@ write_value (int val, int dbg)
         vcout_line_addr = val;
     } else { /* don't write the offset (the first word) into bin file */
         /*
-         * dbgout 
+         * Listing file
+         */
+        const char * label = last_label ? last_label : "";
+        if (last_cmd) fprintf(lstout, "(%4x) %4x  %6d: %16s %s %s", this_loc, val, line_num, label, last_cmd, yytext);
+         
+        /*
+         * debug information
          */
 	/* assembly line numbers */
-        if (dbg && old_line != line_num && old_loc != code_loc) {
-            fprintf (dbgout, "@0:%d:%.4x:%.4x\n", line_num, code_loc-1, code_loc-1);
+        if (dbg && old_line != line_num && old_loc != this_loc) {
+            fprintf (dbgout, "@0:%d:%.4x:%.4x\n", line_num, this_loc, this_loc);
             old_line = line_num;
-            old_loc = code_loc;
+            old_loc = this_loc;
         }
 	/* C line numbers (output after to override assembly line numbers) */
 	if (dbg && dbg_line_state==DBG_LINE_PARSED) {
-            dbg_line_start_addr = code_loc-1;
+            dbg_line_start_addr = this_loc;
 	    dbg_line_state = DBG_LINE_STARTED;
 	}
 
@@ -1054,12 +1072,24 @@ generate_instruction (operands_t operands, const char* opstr)
 	    break;
 
 	/* Generate trap pseudo-ops. */
-	case OP_GETC:  write_value (0xF020,1); break;
-	case OP_HALT:  write_value (0xF025,1); break;
-	case OP_IN:    write_value (0xF023,1); break;
-	case OP_OUT:   write_value (0xF021,1); break;
-	case OP_PUTS:  write_value (0xF022,1); break;
-	case OP_PUTSP: write_value (0xF024,1); break;
+	case OP_GETC:  
+            write_value (0xF020,1);
+            break;
+	case OP_HALT:
+            write_value (0xF025,1);
+            break;
+	case OP_IN:
+            write_value (0xF023,1);
+            break;
+	case OP_OUT:
+            write_value (0xF021,1);
+            break;
+	case OP_PUTS:
+            write_value (0xF022,1);
+            break;
+	case OP_PUTSP:
+            write_value (0xF024,1);
+            break;
 
 	/* Generate non-trap pseudo-ops. */
     	case OP_FILL:
@@ -1154,7 +1184,9 @@ generate_instruction (operands_t operands, const char* opstr)
 	    break;
 
 	/* pseudo-ops */
-	case OP_NOP:  write_value (0x0000, 1); break;
+	case OP_NOP:
+            write_value (0x0000, 1);
+            break;
 
         /* directives */
         case OP_BLKWTO:
@@ -1178,6 +1210,11 @@ generate_instruction (operands_t operands, const char* opstr)
 static void 
 parse_ccode (const char* ccstr)
 {
+    
+    static char br_with_cond[6];
+    snprintf(br_with_cond, 6, "BR%s", ccstr);
+    last_cmd = br_with_cond; // for listing output
+
     if (*ccstr == 'N' || *ccstr == 'n') {
 	inst.ccode |= CC_N;
         ccstr++;
@@ -1197,22 +1234,21 @@ parse_ccode (const char* ccstr)
 static void
 found_label (const char* lname) 
 {
-    char* local = sym_name (lname);
+    if (last_label) free(last_label);
+    last_label = sym_name (lname);
 
     if (pass == 1) {
 	if (saw_orig == 0) {
 	    fprintf (stderr, "%3d: label appears before .ORIG\n", line_num);
 	    num_errors++;
-	} else if (add_symbol (local, code_loc, 0) == -1) {
+	} else if (add_symbol (last_label, code_loc, 0) == -1) {
 	    fprintf (stderr, "%3d: label %s has already appeared\n", 
-	    	     line_num, local);
+	    	     line_num, last_label);
 	    num_errors++;
 	} else {
-	    fprintf (symout, "//\t%-16s  %04X\n", local, code_loc);
-	    fprintf (dbgout, "!%04x:%s\n", code_loc, local);
+	    fprintf (symout, "//\t%-16s  %04X\n", last_label, code_loc);
+	    fprintf (dbgout, "!%04x:%s\n", code_loc, last_label);
         }
     }
-
-    free (local);
 }
 
