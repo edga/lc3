@@ -764,6 +764,10 @@ write_value (int val, int dbg)
     out[1] = (val & 0xFF);
     fwrite (out, 2, 1, objout);
     if (!saw_orig) { /* This is first word (offset, not an instruction) */
+        /*
+         * Listing file
+         */
+        fprintf(lstout,   " Addr: OPCODE   LineNo: Source\n");
         /* 
          * VHDL constants file
          */
@@ -776,8 +780,19 @@ write_value (int val, int dbg)
         /*
          * Listing file
          */
-        const char * label = last_label ? last_label : "";
-        if (last_cmd) fprintf(lstout, "(%4x) %4x  %6d: %16s %s %s", this_loc, val, line_num, label, last_cmd, yytext);
+        if (last_cmd) {
+            const char * label = last_label ? last_label : "";
+            char *s=yytext;
+            // fix the end of line
+            while (*s++) {
+                if (*s=='\r' || *s=='\n') {
+                    *s = '\n';
+                    *(s+1) = 0;
+                    break;
+                }    
+            }    
+            fprintf(lstout, "x%04x: x%04x    %6d: %16s %s %s", this_loc, val, line_num, label, last_cmd, yytext);
+        }   
          
         /*
          * debug information
