@@ -2,7 +2,7 @@
  *  LC-3 Simulator
  *  Copyright (C) 2004  Anthony Liguori <aliguori@cs.utexas.edu>
  *  Copyright (C) 2004  Ehren Kret <kret@cs.utexas.edu>
- *  Modifications 2010  Edgar Lakis <edgar.lakis@gmail.com>
+ *  Copyright (C) 2010-2011  Edgar Lakis <edgar.lakis@gmail.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -725,6 +725,15 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     incmd >> cmdstr;
 
 #warning "TODO: Make machine initialization and loading of the system and user .obj files intuitive"
+    /* 1. When lc3db is started, the lc3os is loaded and PC initialized at it's start??
+     * 2. When loading the obj file, the memory is loaded and breakpoint is set for entry point (main for C source)
+     *    And this entry point location is shown in the source window.
+     * 3. To enable step/continue, the user should press 'Run'
+     * 4. When 'Run' is executed, the CPU executes the OS code and will eventually stop on entry breakpoint.
+     * 5. When loading new c program all the previous breakpoints should be removed. (not for reloading of the same program. or loading additional assembly files Notify the user of this convention with appropriate message)
+     */
+
+
     /* 1. On startup the system is initialized with lc3-os.obj
      * 2. Add special command to "reinitialize"
      * 3. Obj file specified as cmd line arg is loaded and shown at the begining
@@ -879,6 +888,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       myout << std::endl;
       printf("%s",myout.str().c_str());
     } else if (cmdstr == "compile") {
+      // TODO: use standalone compiler or at least use it's source code, to avoid code duplication
       CMD_HELP((
 	    "  compile FILENAME.ASM\n"
 	    "Assembles FILENAME.ASM.\n\n"
@@ -1055,9 +1065,6 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
       if (bp_valid) {
 	int bt_id = breakpoints.add(bp_addr, make_temporary);
-	//if (make_temporary && bt_id > 0) {
-	//  breakpoints.setEnabled(bt_id, true, true, Delete);
-	//}
       } else {
 	printf("breakpoint specification [%s] is not valid\n", param1.c_str());
       }
@@ -1305,6 +1312,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	print_globals(cpu, mem, src_info, selected_scope);
       } else if (param1 == "registers" || param1 == "r") {
 	  print_registers(cpu, mem, src_info, "\t","\n");
+          printf("\n");
       }
     } else {
       printf("Bad command `%s'\nTry using the `help' command.\n", cmd);
