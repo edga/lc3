@@ -46,6 +46,7 @@
 #define I_CC    F_CC (INST)
 #define I_vec8  F_vec8 (INST)
 
+#define I_immu4 F_immu4 (INST)
 #define I_imm5  F_imm5 (INST)
 #define I_imm6  F_imm6 (INST)
 #define I_imm9  F_imm9 (INST)
@@ -88,7 +89,7 @@
 DEF_INST (ADD, FMT_RRR, 0xF038, 0x1000, FLG_NONE, {
     REG (I_DR) = (REG (I_SR1) + REG (I_SR2)) & 0xFFFF;
     SET_CC ();
-}); 
+});
 
 DEF_INST (ADD, FMT_RRI, 0xF020, 0x1020, FLG_NONE, {
     REG (I_DR) = (REG (I_SR1) + I_imm5) & 0xFFFF;
@@ -191,6 +192,48 @@ DEF_INST (TRAP, FMT_V, 0xFF00, 0xF000, FLG_SUBROUTINE, {
     REG (R_PC) = read_memory (I_vec8);
 });
 
+/***********************************************
+ * DTU extensions
+ */
+
+DEF_INST (SLL, FMT_RRIU4, 0xF030, 0x1010, FLG_NONE, {
+    REG (I_DR) = (REG (I_SR1) << I_immu4) & 0xFFFF;
+    SET_CC ();
+}); 
+
+DEF_INST (SRA, FMT_RRIU4, 0xF030, 0x5010, FLG_NONE, {
+    REG (I_DR) = (((signed) ~0xFFFF | REG (I_SR1)) >> I_immu4) & 0xFFFF;
+    SET_CC ();
+});
+
+DEF_INST (SLL, FMT_RRR, 0xD038, 0xD000, FLG_NONE, {
+    REG (I_DR) = (REG (I_SR1) << REG (I_SR2)) & 0xFFFF;
+    SET_CC ();
+});
+
+DEF_INST (SRA, FMT_RRR, 0xD038, 0xD008, FLG_NONE, {
+    REG (I_DR) = (((signed) ~0xFFFF | REG (I_SR1)) >> REG (I_SR2)) & 0xFFFF;
+    SET_CC ();
+});
+
+DEF_INST (DIV, FMT_RRR, 0xD038, 0xD010, FLG_NONE, {
+    REG (I_DR) = (REG (I_SR1) / REG (I_SR2)) & 0xFFFF;
+    SET_CC ();
+});
+
+DEF_INST (MOD, FMT_RRR, 0xD038, 0xD018, FLG_NONE, {
+    REG (I_DR) = (REG (I_SR1) % REG (I_SR2)) & 0xFFFF;
+    SET_CC ();
+});
+
+DEF_INST (MUL, FMT_RRR, 0xD038, 0xD020, FLG_NONE, {
+    REG (I_DR) = (REG (I_SR1) * REG (I_SR2)) & 0xFFFF;
+    SET_CC ();
+});
+
+/*
+ * End of DTU Extensions 
+ **********************************************/
 /* for anything else, assume that it's data... */
 DEF_P_OP (.FILL, FMT_16, 0x0000, 0x0000);
 
@@ -203,6 +246,7 @@ DEF_P_OP (.FILL, FMT_16, 0x0000, 0x0000);
 #undef I_SR
 #undef I_CC
 #undef I_vec8
+#undef I_immu4
 #undef I_imm5
 #undef I_imm6
 #undef I_imm9

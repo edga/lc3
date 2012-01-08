@@ -828,6 +828,10 @@ print_operands (int addr, int inst, format_t fmt)
     	printf ("%sR%d", (found ? "," : ""), F_SR2 (inst));
 	found = 1;
     }
+    if (fmt & FMT_IMMU4) {	/* DTU extension for immediate SLL and SRA */
+    	printf ("%s#%d", (found ? "," : ""), F_immu4 (inst));
+	found = 1;
+    }
     if (fmt & FMT_IMM5) {
     	printf ("%s#%d", (found ? "," : ""), F_imm5 (inst));
 	found = 1;

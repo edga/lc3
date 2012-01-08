@@ -5,22 +5,22 @@
  * "Copyright (c) 2003 by Steven S. Lumetta."
  *
  * Permission to use, copy, modify, and distribute this software and its
- * documentation for any purpose, without fee, and without written 
+ * documentation for any purpose, without fee, and without written
  * agreement is hereby granted, provided that the above copyright notice
  * and the following two paragraphs appear in all copies of this software,
  * that the files COPYING and NO_WARRANTY are included verbatim with
  * any distribution, and that the contents of the file README are included
  * verbatim as part of a file named README with any distribution.
- * 
- * IN NO EVENT SHALL THE AUTHOR BE LIABLE TO ANY PARTY FOR DIRECT, 
- * INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT 
- * OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE AUTHOR 
+ *
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE TO ANY PARTY FOR DIRECT,
+ * INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES ARISING OUT
+ * OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF THE AUTHOR
  * HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- * 
- * THE AUTHOR SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT 
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR 
- * A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS" 
- * BASIS, AND THE AUTHOR NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, 
+ *
+ * THE AUTHOR SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS"
+ * BASIS, AND THE AUTHOR NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT,
  * UPDATES, ENHANCEMENTS, OR MODIFICATIONS."
  *
  * Author:	    Steve Lumetta
@@ -44,6 +44,7 @@
 #define F_SR(i)    F_DR    /* for stores */
 #define F_CC(i)    ((i) & 0x0E00)
 #define F_vec8(i)  ((i) & 0xFF)
+#define F_immu4(i)  ((i) & 0x000F)	/* DTU extension for immediate SLL and SRA */
 
 #define F_imm5(i)  (((i) & 0x010) == 0 ? ((i) & 0x00F) : ((i) | ~0x00F))
 #define F_imm6(i)  (((i) & 0x020) == 0 ? ((i) & 0x01F) : ((i) | ~0x01F))
@@ -65,7 +66,8 @@ enum field_t {
     FMT_ASC8  = 0x080, /* 8-bit ASCII                   */
     FMT_IMM9  = 0x100, /* label (or address from imm9)  */
     FMT_IMM11 = 0x200, /* label (or address from imm11) */
-    FMT_IMM16 = 0x400  /* full instruction in hex       */
+    FMT_IMM16 = 0x400, /* full instruction in hex       */
+    FMT_IMMU4 = 0x800  /* unsigned imm4 used in DTU ext SLL and SRA */
 };
 
 
@@ -80,6 +82,7 @@ enum format_t {
     FMT_R     = FMT_R2,
     FMT_L     = FMT_IMM11,
     FMT_RL    = (FMT_R1 | FMT_IMM9),
+    FMT_RRIU4 = (FMT_R1 | FMT_R2 | FMT_IMMU4),	/* DTU extension for immediate SLL and SRA */
     FMT_RRI6  = (FMT_R1 | FMT_R2 | FMT_IMM6),
     FMT_RR    = (FMT_R1 | FMT_R2),
     FMT_V     = FMT_VEC8,
