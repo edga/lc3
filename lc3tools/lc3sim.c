@@ -95,6 +95,7 @@ static int read_sym_file (const char* filename);
 static void squash_symbols (int addr_s, int addr_e);
 static int execute_instruction ();
 static void disassemble_one (int addr);
+static void disassemble_one_int (FILE *out, int addr);
 static void disassemble (int addr_s, int addr_e);
 static void dump_memory (int addr_s, int addr_e);
 static void run_until_stopped ();
@@ -115,6 +116,7 @@ static void cmd_continue  (const char* args);
 static void cmd_dump      (const char* args);
 static void cmd_execute   (const char* args);
 static void cmd_file      (const char* args);
+static void cmd_tracefile (const char* args);
 static void cmd_finish    (const char* args);
 static void cmd_help      (const char* args);
 static void cmd_list      (const char* args);
@@ -152,6 +154,7 @@ static const struct command_t command[] = {
     {"dump",      1, cmd_dump,      CMD_FLAG_LIST_TYPE },
     {"execute",   1, cmd_execute,   CMD_FLAG_NONE      },
     {"file",      1, cmd_file,      CMD_FLAG_NONE      },
+    {"tracefile", 1, cmd_tracefile, CMD_FLAG_NONE      },
     {"finish",    3, cmd_finish,    CMD_FLAG_REPEATABLE},
     {"help",      1, cmd_help,      CMD_FLAG_NONE      },
     {"list",      1, cmd_list,      CMD_FLAG_LIST_TYPE },
@@ -177,6 +180,7 @@ static bpt_type_t lc3_breakpoints[65536];
 /* startup script or file */
 static char* start_script = NULL;
 static char* start_file = NULL;
+static char* trace_file = NULL;
 
 static int should_halt = 1, last_KBSR_read = 0, last_DSR_read = 0, gui_mode;
 static int interrupted_at_gui_request = 0, stop_scripts = 0, in_init = 0;
@@ -189,9 +193,10 @@ static int rand_device = 1, delay_mem_update = 1;
 static int script_uses_stdin = 1, script_depth = 0;
 
 
-static FILE* lc3in;
-static FILE* lc3out;
-static FILE* sim_in;
+static FILE* traceout = NULL;
+static FILE* lc3in = NULL;
+static FILE* lc3out = NULL;
+static FILE* sim_in = NULL;
 static char* (*lc3readline) (const char*) = simple_readline;
 
 static const char* const ccodes[8] = {
@@ -203,8 +208,12 @@ static const char* const ccodes[8] = {
 static int
 execute_instruction ()
 {
+    if (traceout) {
+	fprintf(traceout, "; ");
+	disassemble_one_int (traceout, REG (R_PC));
+    }
     /* Fetch the instruction. */
-    REG (R_IR) = read_memory (REG (R_PC));
+    REG (R_IR) = read_memory_traced (REG (R_PC));
     REG (R_PC) = (REG (R_PC) + 1) & 0xFFFF;
 
     /* Try to execute it. */
@@ -230,6 +239,13 @@ execute_instruction ()
     return 0;
 
 executed:
+    if (traceout) {
+	fprintf(traceout, "newPC %04x, PSR %04x, GPR: %04x %04x %04x %04x  %04x %04x %04x %04x\n",
+			REG(R_PC) & 0xFFFF, REG(R_PSR) & 0xFFFF,
+			REG(0)&0xFFFF, REG(1)&0xFFFF, REG(2)&0xFFFF, REG(3)&0xFFFF,
+			REG(4)&0xFFFF, REG(5)&0xFFFF, REG(6)&0xFFFF, REG(7)&0xFFFF);
+    }
+
     /* Check for user breakpoints. */
     if (lc3_breakpoints[REG (R_PC)] == BPT_USER) {
 	if (!gui_mode)
@@ -507,13 +523,18 @@ main (int argc, char** argv)
 	start_script = argv[2];
 	init_machine (); /* also executes script */
 	return 0;
+    } else if (argc == 4 && strcmp (argv[1], "-t") == 0) {
+	trace_file = strdup (argv[2]);
+	start_file = strdup (argv[3]);
+	init_machine (); /* setups the trace and loads the file */
     } else if (argc == 2 && strcmp (argv[1], "-h") != 0) {
 	start_file = strdup (argv[1]);
 	init_machine (); /* also loads file */
     } else if (argc != 1) {
 	/* argv[0] may not be valid if -gui entered */
 	printf ("syntax: lc3sim [<object file>|<symbol file>]\n");
-	printf ("        lc3sim [-s <script file>]\n");
+	printf ("        lc3sim -s <script file>\n");
+	printf ("        lc3sim -t <trace file> <object file>|<symbol file>	# run the object file until the halt instruction, save the execution trace to file\n");
 	printf ("        lc3sim -h\n");
 	return 0;
     } else
@@ -584,6 +605,17 @@ read_memory (int addr)
     return lc3_memory[addr];
 }
 
+int
+read_memory_traced (int addr)
+{
+	int ret = read_memory(addr);
+	if (traceout) {
+		fprintf(traceout, "MEM[%04x] => %04x\n", addr & 0xFFFF, ret & 0xFFFF);
+	}
+	return ret;
+}
+
+
 void
 write_memory (int addr, int value)
 {
@@ -633,6 +665,15 @@ write_memory (int addr, int value)
 	    }
 	}
     }
+}
+
+void
+write_memory_traced (int addr, int value)
+{
+    if (traceout) {
+	fprintf(traceout, "MEM[%04x] <= %04x\n", addr & 0xFFFF, value & 0xFFFF);
+    }
+    write_memory(addr, value);
 }
 
 static int
@@ -736,8 +777,16 @@ init_machine ()
 
     if (start_script != NULL)
 	cmd_execute (start_script);
-    else if (start_file != NULL)
-	cmd_file (start_file);
+    else {
+	if (trace_file != NULL)
+	    cmd_tracefile (trace_file);
+	if (start_file != NULL)
+	    cmd_file (start_file);
+	if (trace_file != NULL) {
+	    cmd_continue ("");	/* start automatically if obj file given with the trace file */
+	    cmd_quit ("");	/* run until halted and quit */
+	}
+    }
 }
 
 
@@ -812,91 +861,91 @@ show_state_if_stop_visible ()
 
 
 static void
-print_operands (int addr, int inst, format_t fmt)
+print_operands (FILE *out, int addr, int inst, format_t fmt)
 {
     int found = 0, tgt;
 
     if (fmt & FMT_R1) {
-    	printf ("%sR%d", (found ? "," : ""), F_DR (inst));
+    	fprintf (out, "%sR%d", (found ? "," : ""), F_DR (inst));
 	found = 1;
     }
     if (fmt & FMT_R2) {
-    	printf ("%sR%d", (found ? "," : ""), F_SR1 (inst));
+    	fprintf (out, "%sR%d", (found ? "," : ""), F_SR1 (inst));
 	found = 1;
     }
     if (fmt & FMT_R3) {
-    	printf ("%sR%d", (found ? "," : ""), F_SR2 (inst));
+    	fprintf (out, "%sR%d", (found ? "," : ""), F_SR2 (inst));
 	found = 1;
     }
     if (fmt & FMT_IMMU4) {	/* DTU extension for immediate SLL and SRA */
-    	printf ("%s#%d", (found ? "," : ""), F_immu4 (inst));
+    	fprintf (out, "%s#%d", (found ? "," : ""), F_immu4 (inst));
 	found = 1;
     }
     if (fmt & FMT_IMM5) {
-    	printf ("%s#%d", (found ? "," : ""), F_imm5 (inst));
+    	fprintf (out, "%s#%d", (found ? "," : ""), F_imm5 (inst));
 	found = 1;
     }
     if (fmt & FMT_IMM6) {
-    	printf ("%s#%d", (found ? "," : ""), F_imm6 (inst));
+    	fprintf (out, "%s#%d", (found ? "," : ""), F_imm6 (inst));
 	found = 1;
     }
     if (fmt & FMT_VEC8) {
-    	printf ("%sx%02X", (found ? "," : ""), F_vec8 (inst));
+    	fprintf (out, "%sx%02X", (found ? "," : ""), F_vec8 (inst));
 	found = 1;
     }
     if (fmt & FMT_ASC8) {
-    	printf ("%s", (found ? "," : ""));
+    	fprintf (out, "%s", (found ? "," : ""));
 	found = 1;
 	switch (F_vec8 (inst)) {
-	    case  7: printf ("'\\a'"); break;
-	    case  8: printf ("'\\b'"); break;
-	    case  9: printf ("'\\t'"); break;
-	    case 10: printf ("'\\n'"); break;
-	    case 11: printf ("'\\v'"); break;
-	    case 12: printf ("'\\f'"); break;
-	    case 13: printf ("'\\r'"); break;
-	    case 27: printf ("'\\e'"); break;
-	    case 34: printf ("'\\\"'"); break;
-	    case 44: printf ("'\\''"); break;
-	    case 92: printf ("'\\\\'"); break;
+	    case  7: fprintf (out, "'\\a'"); break;
+	    case  8: fprintf (out, "'\\b'"); break;
+	    case  9: fprintf (out, "'\\t'"); break;
+	    case 10: fprintf (out, "'\\n'"); break;
+	    case 11: fprintf (out, "'\\v'"); break;
+	    case 12: fprintf (out, "'\\f'"); break;
+	    case 13: fprintf (out, "'\\r'"); break;
+	    case 27: fprintf (out, "'\\e'"); break;
+	    case 34: fprintf (out, "'\\\"'"); break;
+	    case 44: fprintf (out, "'\\''"); break;
+	    case 92: fprintf (out, "'\\\\'"); break;
 	    default:
 	    	if (isprint((unsigned char)F_vec8 (inst)))
-		    printf ("'%c'", F_vec8 (inst));
+		    fprintf (out, "'%c'", F_vec8 (inst));
 		else
-		    printf ("x%02X", F_vec8 (inst));
+		    fprintf (out, "x%02X", F_vec8 (inst));
 		break;
 	}
     }
     if (fmt & FMT_IMM9) {
-    	printf ("%s", (found ? "," : ""));
+    	fprintf (out, "%s", (found ? "," : ""));
 	found = 1;
 	tgt = (addr + 1 + F_imm9 (inst)) & 0xFFFF;
 	if (lc3_sym_names[tgt] != NULL)
-	    printf ("%s", lc3_sym_names[tgt]->name);
+	    fprintf (out, "%s", lc3_sym_names[tgt]->name);
     	else
-	    printf ("x%04X", tgt);
+	    fprintf (out, "x%04X", tgt);
     }
     if (fmt & FMT_IMM11) {
-    	printf ("%s", (found ? "," : ""));
+    	fprintf (out, "%s", (found ? "," : ""));
 	found = 1;
 	tgt = (addr + 1 + F_imm11 (inst)) & 0xFFFF;
 	if (lc3_sym_names[tgt] != NULL)
-	    printf ("%s", lc3_sym_names[tgt]->name);
+	    fprintf (out, "%s", lc3_sym_names[tgt]->name);
     	else
-	    printf ("x%04X", tgt);
+	    fprintf (out, "x%04X", tgt);
     }
     if (fmt & FMT_IMM16) {
-    	printf ("%s", (found ? "," : ""));
+    	fprintf (out, "%s", (found ? "," : ""));
 	found = 1;
 	if (lc3_sym_names[inst] != NULL)
-	    printf ("%s", lc3_sym_names[inst]->name);
+	    fprintf (out, "%s", lc3_sym_names[inst]->name);
     	else
-	    printf ("x%04X", inst);
+	    fprintf (out, "x%04X", inst);
     }
 }
 
 static void
-disassemble_one (int addr)
+disassemble_one_int (FILE* out, int addr)
 {
     static const char* const dis_cc[8] = {
         "", "P", "Z", "ZP", "N", "NP", "NZ", "NZP"
@@ -904,18 +953,18 @@ disassemble_one (int addr)
     int inst = read_memory (addr);
 
     /* GUI prefix */
-    if (gui_mode)
+    if (gui_mode && out==stdout)
     	printf ("CODE%c%5d",
 	        (!in_init && addr == lc3_register[R_PC] ? 'P' : ' '),
 		addr + 1);
 
     /* Try to find a label. */
     if (lc3_sym_names[addr] != NULL)
-	printf ("%c %16.16s x%04X x%04X ",
+	fprintf (out, "%c %16.16s x%04X x%04X ",
 		(lc3_breakpoints[addr] == BPT_USER ? 'B' : ' '),
 		lc3_sym_names[addr]->name, addr, inst);
     else
-	printf ("%c %17sx%04X x%04X ",
+	fprintf (out, "%c %17sx%04X x%04X ",
 		(lc3_breakpoints[addr] == BPT_USER ? 'B' : ' '),
 		"", addr, inst);
 
@@ -924,11 +973,11 @@ disassemble_one (int addr)
 #define DEF_INST(name,format,mask,match,flags,code)                        \
     if ((inst & (mask)) == (match)) {                                      \
 	if ((format) & FMT_CC)                                             \
-	    printf ("%s%-*s", #name, (int)(OPCODE_WIDTH - strlen (#name)), \
+	    fprintf (out, "%s%-*s", #name, (int)(OPCODE_WIDTH - strlen (#name)), \
 	    	    dis_cc[F_CC (inst) >> 9]);                             \
 	else                                                               \
-	    printf ("%-*s", OPCODE_WIDTH, #name);                          \
-	print_operands (addr, inst, (format));			           \
+	    fprintf (out, "%-*s", OPCODE_WIDTH, #name);                          \
+	print_operands (out, addr, inst, (format));			           \
 	goto printed;                                                      \
     }
 #define DEF_P_OP(name,format,mask,match) \
@@ -937,10 +986,16 @@ disassemble_one (int addr)
 #undef DEF_P_OP
 #undef DEF_INST
 
-    printf ("%-*s", OPCODE_WIDTH, "???");
+    fprintf (out, "%-*s", OPCODE_WIDTH, "???");
 
 printed:
-    puts ("");
+    fputs ("\n", out);
+}
+
+static void
+disassemble_one (int addr)
+{
+    disassemble_one_int(stdout, addr);
 }
 
 static void
@@ -1350,6 +1405,17 @@ cmd_file (const char* args)
 	gui_stop_and_dump ();
 }
 
+static void
+cmd_tracefile (const char* args)
+{
+    if (traceout)
+	fclose(traceout);
+    traceout = fopen(args, "w");
+    if (traceout)
+	printf("Trace of the state change during the simulation will be saved to \"%s\"\n", args);
+    else
+	printf("Error opening trace file \"%s\"\n", args);
+}
 
 static void
 cmd_finish (const char* args)

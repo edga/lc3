@@ -46,7 +46,7 @@
 #define I_CC    F_CC (INST)
 #define I_vec8  F_vec8 (INST)
 
-#define I_immu4 F_immu4 (INST)
+#define I_immu4 F_immu4 (INST)	/* DTU extension for immediate SLL and SRA */
 #define I_imm5  F_imm5 (INST)
 #define I_imm6  F_imm6 (INST)
 #define I_imm9  F_imm9 (INST)
@@ -139,17 +139,17 @@ DEF_INST (JSRR, FMT_R, 0xFE3F, 0x4000, FLG_SUBROUTINE, {
 });
 
 DEF_INST (LD, FMT_RL, 0xF000, 0x2000, FLG_NONE, {
-    REG (I_DR) = read_memory ((REG (R_PC) + I_imm9) & 0xFFFF);
+    REG (I_DR) = read_memory_traced ((REG (R_PC) + I_imm9) & 0xFFFF);
     SET_CC ();
 });
 
 DEF_INST (LDI, FMT_RL, 0xF000, 0xA000, FLG_NONE, {
-    REG (I_DR) = read_memory (read_memory ((REG (R_PC) + I_imm9) & 0xFFFF));
+    REG (I_DR) = read_memory_traced (read_memory_traced ((REG (R_PC) + I_imm9) & 0xFFFF));
     SET_CC ();
 });
 
 DEF_INST (LDR, FMT_RRI6, 0xF000, 0x6000, FLG_NONE, {
-    REG (I_DR) = read_memory ((REG (I_BaseR) + I_imm6) & 0xFFFF);
+    REG (I_DR) = read_memory_traced ((REG (I_BaseR) + I_imm6) & 0xFFFF);
     SET_CC ();
 });
 
@@ -169,15 +169,15 @@ DEF_P_OP (RTI, FMT_, 0xFFFF, 0x8000);
    instruction detection for now. */
 
 DEF_INST (ST, FMT_RL, 0xF000, 0x3000, FLG_NONE, {
-    write_memory ((REG (R_PC) + I_imm9) & 0xFFFF, REG (I_SR));
+    write_memory_traced ((REG (R_PC) + I_imm9) & 0xFFFF, REG (I_SR));
 });
 
 DEF_INST (STI, FMT_RL, 0xF000, 0xB000, FLG_NONE, {
-    write_memory (read_memory ((REG (R_PC) + I_imm9) & 0xFFFF), REG (I_SR));
+    write_memory_traced (read_memory_traced ((REG (R_PC) + I_imm9) & 0xFFFF), REG (I_SR));
 });
 
 DEF_INST (STR, FMT_RRI6, 0xF000, 0x7000, FLG_NONE, {
-    write_memory ((REG (I_BaseR) + I_imm6) & 0xFFFF, REG (I_SR));
+    write_memory_traced ((REG (I_BaseR) + I_imm6) & 0xFFFF, REG (I_SR));
 });
 
 DEF_P_OP (GETC,  FMT_, 0xFFFF, 0xF020);
@@ -189,7 +189,7 @@ DEF_P_OP (HALT,  FMT_, 0xFFFF, 0xF025);
 
 DEF_INST (TRAP, FMT_V, 0xFF00, 0xF000, FLG_SUBROUTINE, {
     REG (R_R7) = REG (R_PC);
-    REG (R_PC) = read_memory (I_vec8);
+    REG (R_PC) = read_memory_traced (I_vec8);
 });
 
 /***********************************************
