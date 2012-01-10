@@ -46,6 +46,7 @@ part of the label?  Currently I allow only alpha followed by alphanum and _.
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -260,6 +261,7 @@ struct inst_t {
 static int pass, line_num, num_errors, saw_orig, code_loc, saw_end;
 static int code_orig;
 static inst_t inst;
+static char *source_name = NULL;
 static char *last_label = NULL;
 static char *last_cmd = NULL;
 static char instr_disasm[512];
@@ -297,6 +299,21 @@ static void line_ignored ();
 static void parse_ccode (const char*);
 static void generate_instruction (operands_t, const char*);
 static void found_label (const char* lname);
+
+static void show_error (const char *format, ...)
+      __attribute__ ((format (printf, 1, 2)));
+
+static void show_error(const char* format, ...)
+{
+    va_list args;
+    
+    va_start(args,format);
+    fprintf (stderr, "%s:%3d: ", source_name, line_num);
+    vfprintf (stderr, format, args );
+    va_end(args);
+}
+    
+
 
 %}
 
@@ -375,7 +392,7 @@ RET       {inst.op = OP_RET;  last_cmd = "RET"; BEGIN (ls_operands);}
 \.STRINGZ {inst.op = OP_STRINGZ; last_cmd = ".STRINGZ"; BEGIN (ls_operands);}
 
     /* rules for directives */
-\.BLKW    {inst.op = OP_BLKW; last_cmd = NULL; BEGIN (ls_operands);}
+\.BLKW    {inst.op = OP_BLKW; last_cmd = ".BLKW"; BEGIN (ls_operands);}
 \.END     {saw_end = 1;       last_cmd = NULL; BEGIN (ls_finished);}
 \.ORIG    {inst.op = OP_ORIG; last_cmd = NULL; BEGIN (ls_operands);}
 
@@ -477,6 +494,7 @@ main (int argc, char** argv)
 	ext = fname + len;
         strcpy (ext, ".asm");
     }
+    source_name = strdup(fname);
 
     /* Open input file. */
     if ((lc3in = fopen (fname, "r")) == NULL) {
@@ -538,17 +556,16 @@ main (int argc, char** argv)
     yylex ();
     if (saw_orig == 0) {
         if (num_errors == 0 && !saw_end)
-	    fprintf (stderr, "%3d: file contains only comments\n", line_num);
+	    show_error("file contains only comments\n");
         else {
 	    if (saw_end == 0)
-		fprintf (stderr, "%3d: no .ORIG or .END directive found\n", 
-			 line_num);
+		show_error("no .ORIG or .END directive found\n");
 	    else
-		fprintf (stderr, "%3d: no .ORIG directive found\n", line_num);
+		show_error("no .ORIG directive found\n");
 	}
 	num_errors++;
     } else if (saw_end == 0 ) {
-	fprintf (stderr, "%3d: no .END directive found\n", line_num);
+	show_error("no .END directive found\n");
 	num_errors++;
     }
     printf ("%d errors found in first pass.\n", num_errors);
@@ -611,8 +628,7 @@ new_inst_line ()
 static void
 bad_operands ()
 {
-    fprintf (stderr, "%3d: illegal operands for %s\n",
-	     line_num, opnames[inst.op]);
+    show_error("illegal operands for %s\n", opnames[inst.op]);
     num_errors++;
     new_inst_line ();
 }
@@ -620,7 +636,7 @@ bad_operands ()
 static void
 unterminated_string ()
 {
-    fprintf (stderr, "%3d: unterminated string\n", line_num);
+    show_error("unterminated string\n");
     num_errors++;
     new_inst_line ();
 }
@@ -628,8 +644,7 @@ unterminated_string ()
 static void 
 bad_line ()
 {
-    fprintf (stderr, "%3d: contains unrecognizable characters\n",
-	     line_num);
+    show_error("contains unrecognizable characters\n");
     num_errors++;
     new_inst_line ();
 }
@@ -638,8 +653,7 @@ static void
 line_ignored ()
 {
     if (pass == 1)
-	fprintf (stderr, "%3d: WARNING: all text after .END ignored\n",
-		 line_num);
+	show_error("WARNING: all text after .END ignored\n");
 }
 
 static int
@@ -661,7 +675,7 @@ read_raw_val (const char* s, long * vptr)
     if ( s == trash
             || (errno == ERANGE && (v == LONG_MAX || v == LONG_MIN))
             || (errno != 0 && v == 0)) {
-        fprintf (stderr, "%3d: cant recognise the number (%s)\n", line_num, s);
+        show_error("cant recognise the number (%s)\n", s);
         num_errors++;
         return -1;
     }
@@ -684,7 +698,7 @@ read_val (const char* s, int* vptr, int bits)
 	return -1;
 
     if (v < -(1L << (bits - 1)) || v >= (1L << bits)) {
-        fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+        show_error("constant outside of allowed range\n");
         num_errors++;
         return -1;
     }
@@ -705,7 +719,7 @@ read_signed_val (const char* s, int* vptr, int bits)
 	return -1;
 
     if (v < -(1L << (bits - 1)) || v >= (1L << (bits-1))) {
-        fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+        show_error("constant outside of allowed range\n");
         num_errors++;
         return -1;
     }
@@ -726,13 +740,13 @@ read_unsigned_val (const char* s, int* vptr, int bits)
 	return -1;
 
     if (v < 0) {
-	fprintf (stderr, "%3d: unsigned constant expected\n", line_num);
+	show_error("unsigned constant expected\n");
 	num_errors++;
 	return -1;
     }
 
     if (v >= (1L << (bits))) {
-        fprintf (stderr, "%3d: constant outside of allowed range\n", line_num);
+        show_error("constant outside of allowed range\n");
         num_errors++;
         return -1;
     }
@@ -753,7 +767,7 @@ write_value (int val, int dbg)
 
     code_loc = (code_loc + 1) & 0xFFFF;
     if (code_loc == 0) {
-	fprintf(stderr, "ERROR: More code than available address space. Line %d\n", line_num);
+	show_error("More code than available address space.\n");
 	exit(1);
     }	
     if (pass == 1)
@@ -780,9 +794,11 @@ write_value (int val, int dbg)
         /*
          * Listing file
          */
-        if (last_cmd) {
+	{
             const char * label = last_label ? last_label : "";
-            char *s=yytext;
+            const char * cmd = last_cmd ? last_cmd : "";
+            char * rest = last_cmd ? yytext : "\n";
+            char *s=rest;
             // fix the end of line
             while (*s++) {
                 if (*s=='\r' || *s=='\n') {
@@ -791,7 +807,7 @@ write_value (int val, int dbg)
                     break;
                 }    
             }    
-            fprintf(lstout, "x%04x: x%04x    %6d: %16s %s %s", this_loc, val, line_num, label, last_cmd, yytext);
+            fprintf(lstout, "x%04x: x%04x    %6d: %16s %s %s", this_loc, val, line_num, label, cmd, rest);
         }   
          
         /*
@@ -865,8 +881,8 @@ find_label (const char* optarg, int bits)
 	    limit = (1L << (bits - 1));
 	    value -= code_loc + 1;
 	    if (value < -limit || value >= limit) {
-	        fprintf (stderr, "%3d: label \"%s\" at distance %d (allowed "
-			 "range is %d to %d)\n", line_num, local, value,
+	        show_error("label \"%s\" at distance %d (allowed "
+			 "range is %d to %d)\n", local, value,
 			 -limit, limit - 1);
 	        goto bad_label;
 	    }
@@ -875,7 +891,7 @@ find_label (const char* optarg, int bits)
 	free (local);
         return label->addr;
     }
-    fprintf (stderr, "%3d: unknown label \"%s\"\n", line_num, local);
+    show_error("unknown label \"%s\"\n", local);
 
 bad_label:
     num_errors++;
@@ -986,16 +1002,14 @@ generate_instruction (operands_t operands, const char* opstr)
 	    }
 	    saw_orig = 1;
 	} else if (saw_orig == 1) {
-	    fprintf (stderr, "%3d: multiple .ORIG directives found\n",
-		     line_num);
+	    show_error("multiple .ORIG directives found\n");
 	    saw_orig = 2;
 	}
 	new_inst_line ();
 	return;
     }
     if (saw_orig == 0) {
-	fprintf (stderr, "%3d: instruction appears before .ORIG\n",
-		 line_num);
+	show_error("instruction appears before .ORIG\n");
 	num_errors++;
 	new_inst_line ();
 	saw_orig = 2;
@@ -1146,14 +1160,17 @@ generate_instruction (operands_t operands, const char* opstr)
 		        line_num++;
 		    write_value (*str, 0);
 		}
+		last_cmd = NULL;	// To disable the source display for the next values
 	    }
 	    write_value (0, 0);
 	    break;
 	case OP_BLKW:
 	    (void)read_val (o1, &val, 16);
 	    val &= 0xFFFF;
-	    while (val-- > 0)
+	    while (val-- > 0) {
 	        write_value (0x0000, 0);
+		last_cmd = NULL;	// To disable the source display for the next values
+	    }
 	    break;
 	
 	/* Handled earlier or never used, so never seen here. */
@@ -1208,11 +1225,12 @@ generate_instruction (operands_t operands, const char* opstr)
 	    (void)read_val (o1, &val, 16);
 	    val &= 0xFFFF;
             if (code_loc > val) {
-                fprintf (stderr, "%3d: requested address is in the past\n", line_num);
+                show_error("requested address is in the past\n");
                 num_errors++;
             } else {
 	        while (code_loc < val) {
                     write_value (0x0000, 0);
+	            last_cmd = NULL;	// To disable the source display for the next values
                 }
             }
 	    break;
@@ -1254,11 +1272,10 @@ found_label (const char* lname)
 
     if (pass == 1) {
 	if (saw_orig == 0) {
-	    fprintf (stderr, "%3d: label appears before .ORIG\n", line_num);
+	    show_error("label appears before .ORIG\n");
 	    num_errors++;
 	} else if (add_symbol (last_label, code_loc, 0) == -1) {
-	    fprintf (stderr, "%3d: label %s has already appeared\n", 
-	    	     line_num, last_label);
+	    show_error("label %s has already appeared\n", last_label);
 	    num_errors++;
 	} else {
 	    fprintf (symout, "//\t%-16s  %04X\n", last_label, code_loc);
