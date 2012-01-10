@@ -798,15 +798,6 @@ write_value (int val, int dbg)
             const char * label = last_label ? last_label : "";
             const char * cmd = last_cmd ? last_cmd : "";
             char * rest = last_cmd ? yytext : "\n";
-            char *s=rest;
-            // fix the end of line
-            while (*s++) {
-                if (*s=='\r' || *s=='\n') {
-                    *s = '\n';
-                    *(s+1) = 0;
-                    break;
-                }    
-            }    
             fprintf(lstout, "x%04x: x%04x    %6d: %16s %s %s", this_loc, val, line_num, label, cmd, rest);
         }   
          
