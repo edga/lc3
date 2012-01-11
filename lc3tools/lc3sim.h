@@ -112,7 +112,9 @@ enum reg_num_t {
 
 
 extern int read_memory (int addr);
+extern int read_memory_traced (int addr);
 extern void write_memory (int addr, int value);
+extern void write_memory_traced (int addr, int value);
 
 
 #endif /* LC3SIM_H */

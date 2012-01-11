@@ -610,7 +610,7 @@ read_memory_traced (int addr)
 {
 	int ret = read_memory(addr);
 	if (traceout) {
-		fprintf(traceout, "MEM[%04x] => %04x\n", addr & 0xFFFF, ret & 0xFFFF);
+		fprintf(traceout, "MEM[%04x] RD %04x\n", addr & 0xFFFF, ret & 0xFFFF);
 	}
 	return ret;
 }
@@ -671,7 +671,7 @@ void
 write_memory_traced (int addr, int value)
 {
     if (traceout) {
-	fprintf(traceout, "MEM[%04x] <= %04x\n", addr & 0xFFFF, value & 0xFFFF);
+	fprintf(traceout, "MEM[%04x] WR %04x\n", addr & 0xFFFF, value & 0xFFFF);
     }
     write_memory(addr, value);
 }
