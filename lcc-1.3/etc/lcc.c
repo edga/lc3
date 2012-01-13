@@ -55,10 +55,11 @@ extern char *tempname(char *);
 extern int access(char *, int);
 extern int getpid(void);
 
-extern char *cpp[], *include[], *com[], *as[],*ld[], inputs[], *suffixes[];
+extern char *cpp[], *include[], *com[], *as[],*ld[], inputs[], *suffixes[], *SourceMerge[];
 extern int option(char *);
 
 static int errcnt;		/* number of errors */
+static int gflag;		/* -g specified */
 static int Eflag;		/* -E specified */
 static int Lflag;		/* -L specified */
 static int cflag;		/* -c specified */
@@ -79,6 +80,7 @@ static List lccinputs;		/* list of input directories */
 int main(int argc, char *argv[]) {
 	int i, j, nf;
 	char *ldoutfile;
+	char *ldbgoutfile;
 	char *baseoutfile;
 
 	progname = argv[0];
@@ -180,11 +182,13 @@ int main(int argc, char *argv[]) {
 	if (outfile) {
 	  baseoutfile = removesuffix(outfile);
 	  ldoutfile = concat(baseoutfile, first(suffixes[3]));
+	  ldbgoutfile= concat(baseoutfile, ".dbg.asm");
 	}
 	else {
 	  ldoutfile = concat("a", first(suffixes[3]));
+	  ldbgoutfile= concat("a", ".dbg.asm");
 	}
-	
+
 	/* Invoke the LC-3 linker */
 	if (errcnt == 0 && !Eflag && !cflag && llist[1]) {
 	  compose(ld, llist[0], llist[1],
@@ -200,14 +204,20 @@ int main(int argc, char *argv[]) {
 	    errcnt++;
 	}
 
-	rm(rmlist);	
+	if (errcnt == 0 && !Eflag && !cflag && !Lflag && gflag) {
+	  compose(SourceMerge, append(ldoutfile, 0), append(ldbgoutfile, 0), (List) NULL);
+	  if (callsys(av))
+	    errcnt++;
+	}
+
+	rm(rmlist);
 	return errcnt ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 /* alloc - allocate n bytes or die */
 static void *alloc(int n) {
 	static char *avail, *limit;
-	
+
 	n = (n + sizeof(char *) - 1)&~(sizeof(char *) - 1);
 	if (n >= limit - avail) {
 		avail = malloc(n + 4*1024);
@@ -218,7 +228,7 @@ static void *alloc(int n) {
 	return avail - n;
 }
 
-/* append - append a node with string str onto list, return new list */	
+/* append - append a node with string str onto list, return new list */
 static List append(char *str, List list) {
 	List p = alloc(sizeof *p);
 
@@ -408,7 +418,7 @@ static char *exists(char *name) {
 	&& access(name, 4) == 0)
 		return name;
 	if (!(name[0] == '/' || name[0] == '\\' || name[2] == ':')
-	&& (b = lccinputs))		
+	&& (b = lccinputs))
 		do {
 			b = b->link;
 			if (b->str[0]) {
@@ -507,7 +517,7 @@ static int filename(char *name, char *base) {
 /* find - find 1st occurrence of str in list, return list node or 0 */
 static List find(char *str, List list) {
 	List b;
-	
+
 	if (b = list)
 		do {
 			if (strcmp(str, b->str) == 0)
@@ -529,8 +539,9 @@ static void help(void) {
 "-dn	set switch statement density to `n'\n",
 "-Dname -Dname=def	define the preprocessor symbol `name'\n",
 "-E	run only the preprocessor on the named C programs and unsuffixed files\n",
+"-g	include debug information in the assembly and generate addition files\n",
 "-help or -?	print this message on standard error\n",
-"-Idir	add `dir' to the beginning of the list of #include directories\n",	
+"-Idir	add `dir' to the beginning of the list of #include directories\n",
 "-lx	search library `x'\n",
 "-L	compile to LC-3 Assembly Language\n",
 "-M	emit makefile dependencies; implies -E\n",
@@ -665,7 +676,7 @@ xx(unsigned_int,4)
 	case 'I':	/* -Idir */
 		plist = append(arg, plist);
 		return;
-	case 'B':	/* -Bdir */ 
+	case 'B':	/* -Bdir */
 	        {
 		  static char *path;
 		  if (path)
@@ -702,9 +713,10 @@ xx(unsigned_int,4)
 			clist = append(arg, clist);
 			return;
 		case 'g': case 'b':
-			if (option(arg))
+			if (option(arg)) {
 				clist = append(arg[1] == 'g' ? "-g2" : arg, clist);
-			else
+				gflag = 1;
+			} else
 				fprintf(stderr, "%s: %s ignored\n", progname, arg);
 			return;
 		case 'G':

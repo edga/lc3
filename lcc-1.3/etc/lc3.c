@@ -27,6 +27,7 @@ char *include[] = {"-I" LCCDIR "include", "-I" BASEDIR "lc3lib", 0 };
 char *com[] = { LCCDIR "rcc", "-target=lc3", "$1", "$2", "$3", 0 };
 char *as[] = { LCCDIR "lc3as", "$1", "$2", 0 };
 char *ld[] = { LCCDIR "lc3pp", BASEDIR "lc3lib", "$1", "$2", "$3", 0 };
+char *SourceMerge[] = { LCCDIR "SourceMerge", "$1", "$2", 0 };
 
 extern char *concat(char *, char *);
 

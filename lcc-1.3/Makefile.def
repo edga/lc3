@@ -70,13 +70,13 @@ cleanInstall:
 
 install: all
 	${MKDIR} -p ${INSTALL_DIR}bin
-	-${CP} -f src/rcc${EXE} etc/lcc${EXE} cpp/cpp${EXE} lc3pp/lc3pp${EXE} \
+	-${CP} -f src/rcc${EXE} etc/lcc${EXE} cpp/cpp${EXE} lc3pp/lc3pp${EXE} lc3pp/SourceMerge${EXE} \
 		${INSTALL_DIR}bin
 	-${CP} -f -r lc3lib ${INSTALL_DIR}
 	${INSTALL_POST_CMD}
 	${CHMOD} 555 ${INSTALL_DIR}bin/rcc${EXE} \
 		${INSTALL_DIR}bin/lcc${EXE} ${INSTALL_DIR}bin/cpp${EXE} \
-		${INSTALL_DIR}bin/lc3pp
+		${INSTALL_DIR}bin/lc3pp${EXE} ${INSTALL_DIR}bin/SourceMerge${EXE}
 
 
 #
