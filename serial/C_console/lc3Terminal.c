@@ -221,18 +221,22 @@ void parse_options(int argc, char **argv){
 			}
 			ap +=2;
 		} else if (argv[ap][1] == 'x' && !argv[ap][2]) {
-			// Use atoi (with support for different radix)
-			if (sscanf(argv[ap+1], "%d:%d", &arg_dump_start, &arg_dump_stop) == 2) {
-				// Check range
-				if (arg_dump_stop < arg_dump_start) {
-					local_message("Error: option -x, STOP_ADDRESS can't be smaller then START_ADDRESS\n\n");
-					usage_error = 1;
-				}
-			} else if (sscanf(argv[ap+1], "%d+%d", &arg_dump_start, &arg_dump_stop) == 2) {
+			char *arg1 = argv[ap+1];
+			char *arg2, *end;
+
+			arg_dump_start = strtol (arg1, &arg2, 0);
+			arg_dump_stop = strtol (arg2+1, &end, 0);
+			if (*arg2 == '+') {
 				// Convert second argument from WORD_COUNT to STOP_ADDRESS
-				arg_dump_stop += arg_dump_start-1;
-			} else {
+				arg_dump_stop += arg_dump_start - 1;
+			}
+			if (*end != 0 || (*arg2 != ':' && *arg2 != '+')) {
 				local_message("Error: option -x expects pair of natural numbers as LC3_MEMORY_RANGE\n\n");
+				usage_error = 1;
+			} else if (arg_dump_start < 0 ||
+					arg_dump_stop < arg_dump_start ||
+					arg_dump_stop > 0xffff) {
+				local_message("Error: option -x, wrong address (expected: 0 < START_ADDRESS <= STOP_ADDRESS <= 0xFFFF\n\n");
 				usage_error = 1;
 			}
 			ap +=2;
@@ -817,6 +821,8 @@ int main(int argc, char *argv[])
 	}
 
 	if (arg_dump_start >= 0) {
+		local_message("Will try to download the content of LC3 memory x%04x:x%04x.\n", arg_dump_start, arg_dump_stop);
+
 		if (wait_lc3_ready(hCom) == 0) {
 			dump_lc3_memory(hCom, arg_dump_start, arg_dump_stop);
 		}
