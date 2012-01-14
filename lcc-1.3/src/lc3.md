@@ -419,8 +419,6 @@ stmt: ARGB(INDIRB(reg))       "#argb \n"  10
 stmt: ASGNB(reg,INDIRB(reg))  "#asgnb\n"  10
 %%
 
-#line 423 "lc3.md"
-
 #define ck(i) return (i) ? 0 : LBURG_MAX
 #include "lc3_stab.h"
 
@@ -1605,7 +1603,7 @@ Interface lc3IR = {
 	0,  /* mulops_calls 1=hardware does not implement mul,div,rem */
 	0,  /* 0 = no wants_callb */
 	1,  /* 1 = wants_argb */
-	0,  /* 0 = no left_to_right */	// Edgar: why should arguments be evaluated/passed right to left?
+	0,  /* 0 = no left_to_right */
 	0,  /* wants_dag  */
 	0,  /* 0 = signed_char */
 	address,

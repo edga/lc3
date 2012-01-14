@@ -57,7 +57,7 @@ LC3AS   = ./lc3as
 %.o: %.c
 	${GCC} -c ${CFLAGS} -o $@ $<
 
-dist: lc3pp SourceMerge
+dist: lc3pp SourcePaste
 
 distclean::
 	${RM} -f *.o *~
@@ -69,6 +69,6 @@ distclear: distclean
 lc3pp: lc3pp.c
 	${GCC} ${CFLAGS} -o $@ $<
 
-SourceMerge: SourceMerge.c
+SourcePaste: SourcePaste.c
 	${GCC} ${CFLAGS} -o $@ $<
 

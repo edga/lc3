@@ -55,7 +55,7 @@ extern char *tempname(char *);
 extern int access(char *, int);
 extern int getpid(void);
 
-extern char *cpp[], *include[], *com[], *as[],*ld[], inputs[], *suffixes[], *SourceMerge[];
+extern char *cpp[], *include[], *com[], *as[],*ld[], inputs[], *suffixes[], *SourcePaste[];
 extern int option(char *);
 
 static int errcnt;		/* number of errors */
@@ -76,6 +76,8 @@ static char **av;		/* argument vector */
 char *tempdir = TEMPDIR;	/* directory for temporary files */
 static char *progname;
 static List lccinputs;		/* list of input directories */
+
+static char * SourcePasteFile = NULL;
 
 int main(int argc, char *argv[]) {
 	int i, j, nf;
@@ -182,30 +184,37 @@ int main(int argc, char *argv[]) {
 	if (outfile) {
 	  baseoutfile = removesuffix(outfile);
 	  ldoutfile = concat(baseoutfile, first(suffixes[3]));
-	  ldbgoutfile= concat(baseoutfile, ".dbg.asm");
 	}
 	else {
 	  ldoutfile = concat("a", first(suffixes[3]));
-	  ldbgoutfile= concat("a", ".dbg.asm");
 	}
 
 	/* Invoke the LC-3 linker */
 	if (errcnt == 0 && !Eflag && !cflag && llist[1]) {
 	  compose(ld, llist[0], llist[1],
 		  append(ldoutfile, 0));
+	  SourcePasteFile = strdup(ldoutfile);
 	  if (callsys(av))
 	    errcnt++;
 	}
+
+	/* Save the C source into assembly as a comments */
+	if (errcnt == 0 && !Eflag && (gflag & 1)) {
+	  char *temp = tempname(strrchr(SourcePasteFile, '.'));
+	  char glevel[] = "-g "; glevel[2] = gflag + '0';
+	  compose(SourcePaste, append(glevel, 0), append(SourcePasteFile, 0), append(temp, 0));
+	  if (callsys(av))
+	    errcnt++;
+	  if (verbose > 0)
+	    fprintf(stderr, "rename(%s, %s)\n", temp, SourcePasteFile);
+	  if (verbose < 2 && rename(temp, SourcePasteFile))
+	    errcnt++;
+	}
+
 
 	/* Invoke the post-link assembler */
 	if (errcnt == 0 && !Eflag && !cflag && !Lflag) {
 	  compose(as, alist, append(ldoutfile, 0), (List) NULL);
-	  if (callsys(av))
-	    errcnt++;
-	}
-
-	if (errcnt == 0 && !Eflag && !cflag && !Lflag && gflag) {
-	  compose(SourceMerge, append(ldoutfile, 0), append(ldbgoutfile, 0), (List) NULL);
 	  if (callsys(av))
 	    errcnt++;
 	}
@@ -364,8 +373,13 @@ char *concat(char *s1, char *s2) {
 
 /* compile - compile src into dst, return status */
 static int compile(char *src, char *dst) {
+	int status;
 	compose(com, clist, append(src, 0), append(dst, 0));
-	return callsys(av);
+	status = callsys(av);
+	if (status == 0 && cflag) {
+		SourcePasteFile = strdup(dst);
+	}
+	return status;
 }
 
 /* compose - compose cmd into av substituting a, b, c for $1, $2, $3, resp. */
@@ -539,7 +553,7 @@ static void help(void) {
 "-dn	set switch statement density to `n'\n",
 "-Dname -Dname=def	define the preprocessor symbol `name'\n",
 "-E	run only the preprocessor on the named C programs and unsuffixed files\n",
-"-g	include debug information in the assembly and generate addition files\n",
+"-glevel	include debug information in the assembly (level 1:include C source code as comments; 2:information for debugger, 3: both source code and debugger info)\n",
 "-help or -?	print this message on standard error\n",
 "-Idir	add `dir' to the beginning of the list of #include directories\n",
 "-lx	search library `x'\n",
@@ -665,6 +679,13 @@ xx(unsigned_int,4)
 		else
 			clist = append(arg, clist);
 		return;
+	case 'g':
+		if (option(arg)) {
+			clist = append(arg, clist);
+			gflag = arg[2] ? (arg[2]-'0') : 1;
+		} else
+			fprintf(stderr, "%s: %s ignored\n", progname, arg);
+		return;
 	case 'p':	/* -p -pg */
 		if (option(arg))
 			clist = append(arg, clist);
@@ -712,10 +733,9 @@ xx(unsigned_int,4)
 		case 'A': case 'n': case 'w': case 'P':
 			clist = append(arg, clist);
 			return;
-		case 'g': case 'b':
+		case 'b':
 			if (option(arg)) {
-				clist = append(arg[1] == 'g' ? "-g2" : arg, clist);
-				gflag = 1;
+				clist = append(arg, clist);
 			} else
 				fprintf(stderr, "%s: %s ignored\n", progname, arg);
 			return;

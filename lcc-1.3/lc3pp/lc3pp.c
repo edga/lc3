@@ -618,8 +618,10 @@ main (int argc, char *argv[])
    fclose(header_file);
    header_file = NULL;
 
-   /* Replace each .LC3GLOBAL varname regnum line with the LC-3
-    * assembly to load the value of the variable into the register
+   /* Replace each ".LC3GLOBAL varname+off1+...+offN regnum" line with the LC-3
+    * assembly to load the value of the variable into the register.
+    * The "+off1+...+offN" part is optional (used for structs) and can contain 0
+    * or more offsets.
     */
    while(1) {
       Readline(code_file, &curr_line, &curr_line_maxlen);

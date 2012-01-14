@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define MAX_FILE_COUNT 10
@@ -7,7 +8,7 @@
 #define DEBUG_PREFIX ".debug "
 
 
-int ommit_debug_lines = 1;
+int ommit_debug_lines = 0;
 
 const char *asmName;
 const char *outputName;
@@ -45,15 +46,25 @@ int main (int argc, char **argv)
 {
 	int i;
 	const int debug_prefix_size = strlen(DEBUG_PREFIX);
+	int argStart = 1;
 
+	if (argc > 2 && argv[1][0] == '-') {
+		if (argv[1][1] == 'g') {
+			argStart++;
+			ommit_debug_lines = argv[1][2] <= '1';
+		} else {
+			printf("Unrecognized option: %s\n", argv[1]);
+		}
+	}
 
-	if (argc != 3) {
-		printf("Usage: %s ASM_FILE_WITH_DEBUG_INFO OUTPUT_FILE\n", argv[0]);
+	if (argc != argStart+2) {
+		printf("Usage: %s [-glevel] ASM_FILE_WITH_DEBUG_INFO OUTPUT_FILE\n"
+			"   -glevel: if level < 2, the original debug information is removed (replaced by the C source)\n", argv[0]);
 		return 1;
 	}
 
-	asmName = argv[1];
-	outputName = argv[2];
+	asmName = argv[argStart++];
+	outputName = argv[argStart];
 
 	asmFile = fopen (asmName, "r" );
 	if ( asmFile == NULL )
@@ -119,6 +130,9 @@ int main (int argc, char **argv)
 					OutputSource(id-1, line);
 				}
 			}
+		} else if (ommit_debug_lines &&
+				strncmp(asmLine, "; " DEBUG_PREFIX, 2+debug_prefix_size) == 0) {
+			// Ommit debug comments.
 		} else {
 			// Not a special line, just output
 			fputs (asmLine, outputFile );
