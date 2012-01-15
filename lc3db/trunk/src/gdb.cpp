@@ -703,8 +703,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
 #define CMD_HELP(msg) \
       if (show_help) { \
-	printf msg; \
-	continue; \
+          printf msg; \
+          continue; \
       }
 
     if (!*cmdline) {
@@ -761,7 +761,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	   "The arguments are not supported, but simplified input and output redirection can be used:\n"
 	   "   run < TERMINAL\n"
 	   "This will redirect both input and output (the \">\" and \">>\" are not allowed).\n"
-	  ))
+          ));
       incmd >> param1 >> param2;
       if (param1 == "<" && !param2.empty()) {
 	hw.set_tty(open(param2.c_str(), O_RDWR));
@@ -800,7 +800,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	printf("Could not find los.obj\n");
       }
     } else if (cmdstr == "finish") {
-      CMD_HELP(("Continue until return.\n"))
+      CMD_HELP(("Continue until return.\n"));
       break_on_return = true;
       instructions_to_run = INT_INFINITY;
     } else if (cmdstr == "set") {
@@ -811,7 +811,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	    ("  set variable|var NAME = NEW_VALUE\n"
 	     "Sets the variable/register. Currently only simple variables can be set.\n"
 	     "The NAME can be C level variable visible in the current scope or CPU registers or assembler level label.\n"
-	    ))
+	    ));
 	param1.clear();
 	incmd >> param1 >> param2;
 	if (param2 != "=") {
@@ -837,7 +837,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       if (cmdstr == "x") {
 	incmd >> param2 >> param1;
 	if (param2 == "regs" || param1 == "regs") {
-	  CMD_HELP(("Shows content of the registers\n"))
+	  CMD_HELP(("Shows content of the registers\n"));
 	  for (int i = 0; i < 8; i++) {
 	    if (i == 4) printf("\n");
 	    printf("R%d:  %.4x (%5d)  ", i,
@@ -868,7 +868,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	incmd >> param1 >> param2;
       }
       CMD_HELP(("  dump START_ADDR END_ADDR\n"
-	    "Shows the content of the memory\n"))
+	    "Shows the content of the memory\n"));
       off = lexical_cast<uint16_t>(param1);
       uint16_t off2 = lexical_cast<uint16_t>(param2);
       uint16_t counter = 1;
@@ -892,7 +892,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       CMD_HELP((
 	    "  compile FILENAME.ASM\n"
 	    "Assembles FILENAME.ASM.\n\n"
-	    ))
+	    ));
       incmd >> param1;
       const char *args[] = { "", param1.c_str(), NULL };
       lc3_asm(2, args);
@@ -900,21 +900,34 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       CMD_HELP((
 	    "  tty TERMINAL\n"
 	    "Redirect the input/output of the debugged program to TERMINAL.\n"
-	    ))
+	    ));
       incmd >> param1;
       hw.set_tty(open(param1.c_str(), O_RDWR));
     } else if (cmdstr == "continue" || cmdstr == "c" || cmdstr=="cont") {
-      CMD_HELP(("Continues execution untill the breakpoint is hit or machine is halted.\n"))
+      CMD_HELP(("Continues execution untill the breakpoint is hit or machine is halted.\n"));
       printf("running\n");
       instructions_to_run = INT_INFINITY;
     } else if (cmdstr == "disassemble" || cmdstr == "dasm") {
       CMD_HELP(
-	  ("  disassemble START END\n"
+	  ("  disassemble|dasm START END\n"
 	   "Disassemble insructions from address START to END.\n"
-	  ))
-      incmd >> param1 >> param2;
-      uint16_t start = lexical_cast<uint16_t>(param1);
-      uint16_t end  = lexical_cast<uint16_t>(param2);
+	  ));
+      // handle both comma and space (as used by different version of ddd)
+      if (incmd.str().find(',') != std::string::npos){
+        getline(incmd, param1, ',');
+      } else {
+        incmd >> param1;
+      }
+      incmd >> param2;
+      uint16_t start = 0;
+      uint16_t end = 0;
+      try {
+        start = lexical_cast<uint16_t>(param1);
+        end  = lexical_cast<uint16_t>(param2);
+      } catch(bad_lexical_cast &e) {
+        printf("Bad argument for the disassemble command \nTry using the `help dasm' command.\n");
+        continue;
+      }
       for (; start < end; start++) {
 	uint16_t IR = mem[start];
 	for (std::map<std::string, uint16_t>::iterator i = src_info.symbol.begin();
@@ -933,7 +946,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	  ("  load|file FILENAME.OBJ\n"
 	   "Loads the content of the FILENAME.OBJ for the debugging.\n"
            "The debug information will be tried to load from FILENAME.DBG\n"
-	  ))
+	  ));
       incmd >> param1;
       uint16_t entry;
       uint16_t pc = load_prog(param1.c_str(), src_info, mem, &entry);
@@ -951,9 +964,9 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       }
     } else if (cmdstr == "stepi" || cmdstr == "si") {
       CMD_HELP(
-	  ("  stepi [COUNT]\n"
+	  ("  stepi|si [COUNT]\n"
 	   "Execute single instruction (or COUNT instructions if specified).\n"
-	  ))
+	  ));
       incmd >> param1;
       try {
 	instructions_to_run = lexical_cast<uint16_t>(param1);
@@ -965,7 +978,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	  ("  nexti|ni\n"
 	   "Execute single instruction similar to `stepi' command, but while performing call instruction execute until subroutine returns.\n"
 	   "NOTE: the COUNT argument is not yet supported by nexti.\n"
-	  ))
+	  ));
       instructions_to_run = 1;
       step_over_calls = 1;
     } else if (cmdstr == "step" || cmdstr == "s") {
@@ -973,7 +986,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	  ("  step|s [COUNT]\n"
 	   "Execute single line of source code (or COUNT lines if specified).\n"
 	   "NOTE: the COUNT argument is not yet supported for C language.\n"
-	  ))
+	  ));
       incmd >> param1;
       int repeat;
       try {
@@ -998,7 +1011,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	  ("  next|n\n"
 	   "Execute single line of source code. If the line contains the function call, functions are executed until return.\n"
 	   "NOTE: the COUNT argument is not yet supported for C language.\n"
-	  ))
+	  ));
       SourceLocation line = src_info.find_source_location_absolute(cpu.PC);
       if (line.lineNo <= 0 || !line.isHLLSource) {
 	// No hi level line at current location
@@ -1014,7 +1027,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       CMD_HELP(
 	  ("  ignore BREAKPOINT_ID COUNT\n"
 	   "Ignore the breakpoint the next COUNT times.\n"
-	  ))
+	  ));
       incmd >> param1 >> param2;
       int id = lexical_cast<uint16_t>(param1);
       int count = lexical_cast<uint16_t>(param2);
@@ -1036,7 +1049,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
            "  break FILENAME:LINENO\n"
            "  break ADDRESS\n"
            "Creates the breakpoint (temporary breakpoint is created with `tbreak' command).\n"
-          ))
+          ));
 
       if (src_info.symbol.count(param1)) {
 	// Symbol
@@ -1075,7 +1088,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
           ("  display [VARIABLE]\n"
            "Add the VARIABLE to the display list, to be printed each time the program stops.\n"
            "Without arguments shows the current display list.\n"
-          ))
+          ));
       incmd >> param1;
 
       if (param1.empty()) {
@@ -1090,14 +1103,14 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       CMD_HELP(
           ("  print EXPRESSION\n"
            "Show the value of the EXPRESSION. Currently the expression can only be single variable/register without any operators.\n"
-          ))
+          ));
       incmd >> param1;
       VariableInfo* v = find_variable(cpu, mem, src_info, param1.c_str(), selected_scope);
       if (v) {
 	print_variable(v, cpu, mem, src_info);
       }
     } else if (cmdstr == "exit" || cmdstr == "quit" || cmdstr == "q") {
-      CMD_HELP(("Quits the debugger.\n"))
+      CMD_HELP(("Quits the debugger.\n"));
       free(cmdline);
       cmdline = 0;
       break;
@@ -1112,7 +1125,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
               ("  undisplay DISPLAY_ID [DISPLAY_ID...]\n"
                "Delete the displays with specified IDs. This is alias for `delete display' command.\n"
                "The ID numbers corresponding to each display can be found by `info display' command.\n"
-              ))
+              ));
         } else {
           CMD_HELP(
               ("  %1$s display DISPLAY_ID [DISPLAY_ID...]\n"
@@ -1120,7 +1133,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
                "%2$s display/breakpoint.\n"
                "The ID numbers corresponding to each display/breakpoint can be found by `info display/breakpoints' command.\n"
               , cmdstr.c_str(), is_delete_cmd ? "Delete" : "Disable"
-              ))
+              ));
         }
       }
 
@@ -1171,7 +1184,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
            "  enable [once|delete] BREAKPOINT_ID [BREAKPOINT_ID...]\n"
            "Enables display/breakpoint. When enabling breakpoints additional modifiers can be used. The breakpoint will be disabled on first hit if `once' modifier is used, and deleted on first hit if `delete' is specified.\n"
            "The ID numbers corresponding to each display/breakpoint can be found by `info display/breakpoints' command.\n"
-          ))
+          ));
       bool is_display_cmd = 0;
       BreakpointDisposition disp = Keep;
       //param1.clear();
@@ -1228,14 +1241,14 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
           CMD_HELP(
               ("  frame [FRAMENO]\n"
                "Selects and prints the FRAMENO stack frame. With no arguments prints the current frame.\n"
-              ))
+              ));
 	  //selected_frame = backtrace.frames.begin() + ((N==-1) ? 0 : N);
 	  selected_frame_id = ((N==-1) ? selected_frame_id : N);
 	} else if (cmdstr == "up") {
           CMD_HELP(
               ("  up [COUNT]\n"
                "Select and print the frame above (the caller of the current frame). With argument select frame COUNT frames apart.\n"
-              ))
+              ));
 	  selected_frame_id += ((N==-1) ? 1 : N);
 	  //selected_frame += (N==-1) ? 1 : N;
 	  //selected_frame = backtrace.frames.begin() + (*selected_frame)->id +((N==-1) ? 1 : N);
@@ -1243,7 +1256,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
           CMD_HELP(
               ("  down [COUNT]\n"
                "Select and print the frame below (the one called by the current frame). With argument select frame COUNT frames apart.\n"
-              ))
+              ));
 	  selected_frame_id -= ((N==-1) ? 1 : N);
 	  //selected_frame = backtrace.frames.begin() + (*selected_frame)->id -((N==-1) ? 1 : N);
 	  //selected_frame -= (N==-1) ? 1 : N;
@@ -1266,7 +1279,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     } else if (cmdstr == "bt" || cmdstr == "backtrace" || cmdstr == "where") {
       CMD_HELP(
           ("  backtrace|bt|where\n"
-           "Print the call frames of the stack at current execution location.\n"))
+           "Print the call frames of the stack at current execution location.\n"));
       update_backtrace(cpu, mem, src_info);
 
       for (int i=0; i < backtrace.frames.size(); i++) {
@@ -1298,7 +1311,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
            "  info variables|var        -- global and file-static variables\n"
            "  info registers|r          -- CPU and some special memory mapped registers\n"
            "Show various information about the state of the debugged program.\n"
-          ))
+          ));
       if (param1 == "breakpoints" || param1 == "b") {
 	breakpoints.showInfo();
 	// FixMe: Todo: add context, to use with "frame" commands, and use it as replacement of cpu.PC
