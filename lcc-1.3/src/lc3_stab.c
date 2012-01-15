@@ -320,3 +320,64 @@ void lc3_stabsym(Symbol p) {
 	//print("%d,%s\n", tc,
 	//	p->scope >= PARAM && p->sclass != EXTERN ? p->x.name : "0");
 }
+
+
+
+// These are not used for debug info generation, but rather as general function
+// common to both lc3 targets.
+
+#ifndef MAX
+#define MAX(x, y) ((x)<(y) ? (y):(x))
+#endif
+#ifndef MIN
+#define MIN(x, y) ((x)<(y) ? (x):(y))
+#endif
+
+int calculate_address(int dstReg, int baseReg_, int offset, int withLDR, FILE *output) {
+	int baseReg = baseReg_;
+	int sum = 0;
+	int ldrOffset;
+
+	if (offset > 0) {
+		ldrOffset = withLDR ? MIN(offset,31) : 0;
+		offset -= ldrOffset;
+		if (offset <= 15*3) { /* Is it cheaper to calculate offset */
+			while (offset) {
+				int addOffset = MIN(offset, 15);
+				offset -= addOffset; sum += addOffset;
+				fprintf(output, "ADD R%d, R%d, #%-4d	; R%d[%d]\n", dstReg, baseReg, addOffset, baseReg_, sum);
+				baseReg = dstReg;
+			}
+		} else {
+		}
+	} else if (offset < 0) {
+		ldrOffset = withLDR ? MAX(offset,-32) : 0;
+		offset -= ldrOffset;
+		if (offset >= -16*3) { /* Is it cheaper to calculate offset */
+			while (offset) {
+				int addOffset = MAX(offset, -16);
+				offset -= addOffset; sum += addOffset;
+				fprintf(output, "ADD R%d, R%d, #%-4d	; R%d[%d]\n", dstReg, baseReg, addOffset, baseReg_, sum);
+				baseReg = dstReg;
+			}
+		}
+	} else if (!withLDR) {
+		fprintf(output, "ADD R%d, R%d, #%-4d\n", dstReg, baseReg, offset);
+	}
+
+	if (offset) {	// It was not efficient to calculate the offset, let's load it from the constant
+		offset += ldrOffset;
+		ldrOffset = 0;
+		fprintf(output, "BR #1\n"
+				".FILL #%d\n"
+				"LD R%d, #-2\n"
+				"ADD R%d, R%d, R%d\n", offset+ldrOffset, dstReg, dstReg, baseReg, dstReg);
+		baseReg = dstReg;
+		sum = offset;
+	}
+
+	if (withLDR) { /* need to also load the value from the calculated address */
+		fprintf(output, "LDR R%d, R%d, #%-4d	; R%d[%d]\n", dstReg, baseReg, ldrOffset, baseReg_, sum+ldrOffset);
+	}
+}
+

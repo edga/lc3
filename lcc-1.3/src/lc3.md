@@ -444,7 +444,7 @@ static void lc3_store_far_on_stack(int srcReg, int bigOffset) {
 	lc3_store(4,6,-1);	// spill R4 on stack
 
 	i=bigOffset;
-	if ((i > 0 && i > 4*15) || (i < 0 && i < -4*16)) {   /* It's cheaper to load offset from instruction stream */
+	if ((i > 0 && i > 3*15) || (i < 0 && i < -3*16)) {   /* It's cheaper to load offset from instruction stream */
 		print("BR #1\n"
 			".FILL #%d\n"
 			"LD R4, #-2\n"
@@ -721,6 +721,7 @@ static void emit2(Node p) {
 				i += p->syms[0]->u.c.v.i;
 				
 			if (i) {
+				//calculate_address(6, 6, i, 0, stdout);
 				for(;i>15;i-=15)
 					lc3_addimm(6,6,15);
 				lc3_addimm(6,6,i);
@@ -840,6 +841,8 @@ extern void dumptree(Node p);
 		case CNST+I: case CNST+U: case CNST+P:
 			/*Constants need to be loaded by repeated adds*/
 			x = getregnum(p);
+
+			//	calculate_address(x, x, atoi(p->syms[0]->x.name), 0, stdout);
 			lc3_andimm(x,x,0);
 			for(i=atoi(p->syms[0]->x.name); i>15; i-=15)
 				lc3_addimm(x,x,15);
@@ -847,6 +850,7 @@ extern void dumptree(Node p);
 				lc3_addimm(x,x,-16);
 			if(i!=0)
 				lc3_addimm(x,x,i);
+
 			break;
 
 /**************** Global, Local, Formal variables addresses ************/
@@ -855,6 +859,7 @@ extern void dumptree(Node p);
 			break;
 
 		case ADDRL+P:  
+			//	calculate_address(x, x, atoi(p->syms[0]->x.name), 0, stdout);
 			i=atoi(p->syms[0]->x.name);
             if(p->syms[2]==NULL) {
                 print("R5, %d",i);
@@ -873,6 +878,7 @@ extern void dumptree(Node p);
 			break;
 
 		case ADDRF+P:
+			//	calculate_address(x, x, atoi(p->syms[0]->x.name), 0, stdout);
 			i=atoi(p->syms[0]->x.name);
 			x = getregnum(p);
 			if(i>15)
@@ -1527,6 +1533,8 @@ static void blkloop(int dreg, int doff, int sreg, int soff, int size, int tmps[]
 	int i=0;
 
 	print(";blkloop!!!!\n");
+	//	calculate_address(sreg, sreg, soff, 0, stdout);
+	//	calculate_address(dreg, dreg, doff, 0, stdout);
 
 	//make sure both offsets are in [-16,15]
 	for(; soff>15; soff-=15)
@@ -1541,6 +1549,7 @@ static void blkloop(int dreg, int doff, int sreg, int soff, int size, int tmps[]
 
 	//use tmps[1] as size counter (ecx)
 	lc3_andimm(tmps[1],tmps[1],0);
+	//	calculate_address(tmps[1], tmps[1], size, 0, stdout);
 	for(i=size; i>15; i-=15)
 		lc3_addimm(tmps[1],tmps[1],15);
 	lc3_addimm(tmps[1],tmps[1],i);
@@ -1565,11 +1574,12 @@ static void blkloop(int dreg, int doff, int sreg, int soff, int size, int tmps[]
 static void blkfetch(int size, int off, int reg, int tmp) {
 	print("blkfetch!!!!\n");
 	//print("ldr R%d, R%d, #%d\n", tmp, reg, off);
+	// calculate_address(tmp, reg, off, 1, stdout);
 	for(; off>15; off-=15)
 		lc3_addimm(reg,reg,15);
 	for(; off<-16; off+=16)
 		lc3_addimm(reg,reg,-16);
-
+	
 	lc3_load(tmp,reg,off);
 }
 /************************************************************
@@ -1580,6 +1590,7 @@ static void blkfetch(int size, int off, int reg, int tmp) {
 static void blkstore(int size, int off, int reg, int tmp) {
 	print(";blkstore!!!!!!!\n");
 	//print("str R%d, R%d, #%d\n", tmp, reg, off);
+	// calculate_address(tmp, reg, off, 1, stdout);
 	for(; off>15; off-=15)
 		lc3_addimm(reg,reg,15);
 	for(; off<-16; off+=16)
