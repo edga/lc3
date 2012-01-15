@@ -116,7 +116,7 @@ const char * HELP_LIST =
 "  quit|q|exit                  -- Quits the debugging session.\n"
 
 "\n=== Running ===\n"
-"  run                          -- Runs the loaded program\n"
+"  run|r                        -- Runs the loaded program\n"
 "  continue|cont|c              -- Continue execution after breakpoint\n"
 "  next|n                       -- Steps over the next source line (useful to step over the function calls)\n"
 "  nexti|ni                     -- Steps over the next instruction (useful to step over TRAP and JSR instructions)\n"
@@ -707,9 +707,11 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
           continue; \
       }
 
-    if (!*cmdline) {
+
+    if (*cmdline == 0) {
       cmd = last_cmd.c_str();
     } else {
+      last_cmd.assign(cmdline);
       cmd = cmdline;
 #if defined(USE_READLINE)
       add_history(cmd);
@@ -754,7 +756,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       }
     }
 
-    if (cmdstr == "run") {
+    if (cmdstr == "run" || cmdstr == "r") {
       // TODO: think about the proper load/run scenario (where to put the lc3os code and how to set breakpoints and initialize PC)
       CMD_HELP(
 	  ("Runs the CPU from current PC location (the object file should be loaded beforehand with `file' command).\n"
@@ -800,7 +802,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	printf("Could not find los.obj\n");
       }
     } else if (cmdstr == "finish") {
-      CMD_HELP(("Continue until return.\n"));
+      CMD_HELP(("Continue until return (or until breakpoint is hit).\n"));
       break_on_return = true;
       instructions_to_run = INT_INFINITY;
     } else if (cmdstr == "set") {
@@ -1339,7 +1341,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
 	// Check stoping conditions
 	if (!(mem[0xFFFE] & 0x8000)) {
-	  fprintf(stderr, "LC3 is halted\n");
+	  fprintf(stderr, "LC3 is halted. Set the 0x8000 bit of mem[0xFFFE] to run it again.\n");
 	  break;
 	}
 	// FixMe:
@@ -1374,6 +1376,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	}
 
 	// next/nexti workaround
+        // look at the lc3sim for ideas of how to implement this by counting the frames on call/ret
 	if (step_over_calls) {
 	  uint16_t IR_opcode = mem[cpu.PC] & 0xF000;
 	  if (IR_opcode == 0xF000 || // TRAP
@@ -1404,6 +1407,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	}
 
       }
+      // One ore more instructions have been executed. Show the stopped location to the user.
       selected_scope = cpu.PC;
       show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
     }

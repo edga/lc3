@@ -17,6 +17,7 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 \*/
 
+// Non-standard: use the last interrupt to store start address of loaded program
 #define boot() \
 { \
   PC = mem[0x01FF]; \
@@ -210,6 +211,56 @@ OP(TRAP,  (1,1,1,1,0,0,0,0,G,G,G,G,G,G,G,G))
   R[7] = PC;
   PC = mem[VEC];
 }
+
+/***********************************************
+ * DTU extensions
+ */
+
+OP(SLL,   (0,0,0,1,A,A,A,C,C,C,0,1,G,G,G,G))
+{
+  DR = SR1 << VEC;
+  setcc(DR);
+}
+
+OP(SRA,   (0,1,0,1,A,A,A,C,C,C,0,1,G,G,G,G))
+{
+  DR = SR1 >> VEC;
+  setcc(DR);
+}
+
+OP(SLL,   (1,1,0,1,A,A,A,C,C,C,0,0,0,D,D,D))
+{
+  DR = SR1 << SR2;
+  setcc(DR);
+}
+
+OP(SRA,   (1,1,0,1,A,A,A,C,C,C,0,0,1,D,D,D))
+{
+  DR = SR1 >> SR2;
+  setcc(DR);
+}
+
+OP(DIV,   (1,1,0,1,A,A,A,C,C,C,0,1,0,D,D,D))
+{
+  DR = SR1 / SR2;
+  setcc(DR);
+}
+
+OP(MOD,   (1,1,0,1,A,A,A,C,C,C,0,1,1,D,D,D))
+{
+  DR = SR1 % SR2;
+  setcc(DR);
+}
+
+OP(MUL,   (1,1,0,1,A,A,A,C,C,C,1,0,0,D,D,D))
+{
+  DR = SR1 * SR2;
+  setcc(DR);
+}
+
+/*
+ * End of DTU Extensions 
+ **********************************************/
 
 OP(UNK,   (F,F,F,F,F,F,F,F,G,G,G,G,G,G,G,G))
 {
