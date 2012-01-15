@@ -1,5 +1,5 @@
-/**************************************************************
-  		lc3pp.c
+/***************************************** vim: set expandtab sw=3: ******
+		lc3pp.c
 Author: Ajay Ladsaria	11/22/2003
 	This linker modifies the output of LCC to make it friendly for LC3's
 	assembler.  It replaces the global variable flags with the actual address
@@ -18,12 +18,14 @@ Modified: 3/31/2004
    source files as command line arguments.  It is necessary to specify an
    output file as the last command line argument and the path to the lc3lib
    code as the first command line argument.
+
 ***************************************************************************/
 
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
 #include<unistd.h>
+#include<assert.h>
 
 #define LINE_MAXLEN 100
 
@@ -399,6 +401,54 @@ int check_ldr(const char *line, int reg_num, int *poffset)
    return 1;
 }
 
+static int calculate_address(int dstReg, int baseReg_, int offset, int withLDR, FILE *output) {
+	int baseReg = baseReg_;
+	int sum = 0;
+	int ldrOffset;
+
+	if (offset > 0) {
+		ldrOffset = withLDR ? MIN(offset,31) : 0;
+		offset -= ldrOffset;
+		if (offset <= 15*3) { /* Is it cheaper to calculate offset */
+			while (offset) {
+				int addOffset = MIN(offset, 15);
+				offset -= addOffset; sum += addOffset;
+				fprintf(output, "ADD R%d, R%d, #%-4d	; R%d[%d]\n", dstReg, baseReg, addOffset, baseReg_, sum);
+				baseReg = dstReg;
+			}
+		} else {
+		}
+	} else if (offset < 0) {
+		ldrOffset = withLDR ? MAX(offset,-32) : 0;
+		offset -= ldrOffset;
+		if (offset >= -16*3) { /* Is it cheaper to calculate offset */
+			while (offset) {
+				int addOffset = MAX(offset, -16);
+				offset -= addOffset; sum += addOffset;
+				fprintf(output, "ADD R%d, R%d, #%-4d	; R%d[%d]\n", dstReg, baseReg, addOffset, baseReg_, sum);
+				baseReg = dstReg;
+			}
+		}
+	} else if (!withLDR) {
+		fprintf(output, "ADD R%d, R%d, #%-4d\n", dstReg, baseReg, offset);
+	}
+
+	if (offset) {	// It was not efficient to calculate the offset, let's load it from the constant
+		offset += ldrOffset;
+		ldrOffset = 0;
+		fprintf(output, "BR #1\n"
+				".FILL #%d\n"
+				"LD R%d, #-2\n"
+				"ADD R%d, R%d, R%d\n", offset+ldrOffset, dstReg, dstReg, baseReg, dstReg);
+		baseReg = dstReg;
+		sum = offset;
+	}
+
+	if (withLDR) { /* need to also load the value from the calculated address */
+		fprintf(output, "LDR R%d, R%d, #%-4d	; R%d[%d]\n", dstReg, baseReg, ldrOffset, baseReg_, sum+ldrOffset);
+	}
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -407,10 +457,6 @@ main (int argc, char *argv[])
    int var_name_maxlen = LINE_MAXLEN;
    int cwd_size=200;
    int length=0;
-
-   /*used when replacing .LC3Global lines*/
-   int reg_num=0, offset=0;
-   int rd, rb, with_LDR;
 
    /*This array will hold FILE* to input source files*/
    FILE** files;
@@ -633,38 +679,45 @@ main (int argc, char *argv[])
          fprintf(output_file, "%s\n", curr_line);
       else
       {
+         int reg_num;
+         int glob_offset, var_offset;
+         int with_LDR;
+
+         char *s, *d;
+
          /*Need to replace the global var flag*/
-         i=0;
          if(var_name_maxlen < curr_line_maxlen)
          {
             var_name_maxlen = curr_line_maxlen;
             var_name = realloc( var_name, curr_line_maxlen);
          }
-         while( (var_name[i++] = curr_line[i+11]) != ' ');
 
-         var_name[i-1] = '\0';
-         reg_num = atoi(curr_line+i+11);
-
-         strcpy(var_name, curr_line+11);
-         i = 0;
-         offset=0;
-         while (var_name[++i] != '+' && var_name[i] != '-'
-               && var_name[i] != ' ');
-         if(var_name[i] == '+' || var_name[i] == '-') {
-            offset += atoi(var_name+i);
-            /* Seams that following should be right:
-	            offset += ( var_name[i]=='+' ? 1: -1) * atoi(var_name+i);
-	            Unfortunately this doesn't work. Probably backend means '+' when it writes '-'
-	         */
+         // read the global's name
+         s = curr_line+11;
+         d = var_name;
+         while(*s != ' ' && *s != '+' && *s != '-') {
+            *d++ = *s++;
          }
-         var_name[i] = '\0';
+         *d = 0;
 
+         // collect all the offsets
+         var_offset=0;
+         while (*s == '+' || *s == '-') {
+            var_offset += strtol(s, &s, 10);
+         }
+
+         // Get the destination register number
+         assert(*s == ' ');
+         reg_num = strtol(s+1, &s, 10);
+         assert(*s == 0);
+
+         // Calculate the offsets from the start of the globals to var_name
+         glob_offset = 0;
          for(i=0; i<g_num; i++) {
             if(strcmp(g_vars[i].name,var_name)==0)
                break;
-            offset+=g_vars[i].size;
+            glob_offset +=g_vars[i].size;
          }
-
 
          /* See if offset of global variable is needed just to load that
           * variable.
@@ -677,85 +730,26 @@ main (int argc, char *argv[])
          Readline(code_file, &curr_line, &curr_line_maxlen);
          with_LDR = check_ldr(curr_line, reg_num, &i);
          if(with_LDR) {
-            offset += i;
+            glob_offset += i;
          }
 
          /* Print a user friendly comment */
          if(with_LDR)
-            fprintf(output_file, ";<ld R%d, %s\t;GLOB:%d>\n", reg_num, var_name, offset);
+            fprintf(output_file, ";     <ld R%d, %s+%d\t;GLOBALS[%d]+%d>\n", reg_num, var_name, var_offset, glob_offset, var_offset);
          else
-            fprintf(output_file, ";<lea R%d, %s\t;GLOB:%d>\n", reg_num, var_name, offset);
+            fprintf(output_file, ";     <lea R%d, %s+%d\t;GLOBALS[%d]+%d>\n", reg_num, var_name, var_offset, glob_offset, var_offset);
 
-         /* Load <offset> into R<reg_num> (possibly followed by LDR) */
-         i=offset;
-         if(i>=0) {
-            /* Calculate how much can we use as an offset in LDR instruction */
-            offset = with_LDR ? MIN(i,31) : 0;
-            i -= offset;
-            if (i <= 4*15) { /* Is it cheaper to calculate offset */
-               if (with_LDR && i==0) /* skip it if we can load offset directly in LDR */
-                  fprintf(output_file, "LDR R%d, R4, #%d\n", reg_num, offset);
-               else {
-                  if (i <= 15)
-                     fprintf(output_file, "ADD R%d, R4, #%d\n",reg_num,i);
-                  else {
-                     fprintf(output_file, "ADD R%d, R4, #15\n",reg_num);
-                     for(i-=15;i>15; i-=15)
-                        fprintf(output_file, "ADD R%d, R%d, #15\n",reg_num,reg_num);
-                     fprintf(output_file, "ADD R%d, R%d, #%d\n",reg_num,reg_num,i);
-                  }
-                  if (with_LDR)
-                     fprintf(output_file, "LDR R%d, R%d, #%d\n", reg_num, reg_num, offset);
-               }
-            }
-            else {   /* It's cheaper to load offset from instruction stream */
-               fprintf(output_file, "BR #1\n"
-                       ".FILL #%d\n"
-                       "LD R%d, #-2\n"
-                       "ADD R%d, R%d, R4\n", i+offset, reg_num, reg_num, reg_num);
-               if (with_LDR)
-                  fprintf(output_file, "LDR R%d, R%d, #0\n", reg_num, reg_num);
-            }
-         }
-         else { /* i < 0 */
-            /* Calculate how much can we use as an offset in LDR instruction */
-            offset = with_LDR ? MAX(i,-32) : 0;
-            i -= offset;
-            if (i >= -4*16) { /* Is it cheaper to calculate offset */
-               if (with_LDR && i==0) /* skip it if we can load offset directly in LDR */
-                  fprintf(output_file, "LDR R%d, R4, #%d\n", reg_num, offset);
-               else {
-                  if(i >= -16)
-                     fprintf(output_file, "ADD R%d, R4, #%d\n",reg_num,i);
-                  else {
-                     fprintf(output_file, "ADD R%d, R4, #-16\n",reg_num);
-                     for(i+=16;i<-16; i+=16)
-                        fprintf(output_file, "ADD R%d, R%d, #-16\n",reg_num,reg_num);
-                     fprintf(output_file, "ADD R%d, R%d, #%d\n",reg_num,reg_num,i);
-                  }
-                  if (with_LDR)
-                     fprintf(output_file, "LDR R%d, R%d, #%d\n", reg_num, reg_num, offset);
-               }
-            }
-            else {   /* It's cheaper to load offset from instruction stream */
-               fprintf(output_file, "BR #1\n"
-                       ".FILL #%d\n"
-                       "LD R%d, #-2\n"
-                       "ADD R%d, R%d, R4\n", i+offset, reg_num, reg_num, reg_num);
-               if (with_LDR)
-                  fprintf(output_file, "LDR R%d, R%d, #0\n", reg_num, reg_num);
-            }
-         }
+         calculate_address(reg_num, 4, var_offset+glob_offset, with_LDR, output_file);
 
          if (!with_LDR) {
-            fprintf(output_file, ";</lea>\n");
+            fprintf(output_file, ";     </lea>\n");
 
             /* The extra line we have read was not the LDR, so we need handle it.
              *   We can't just print it, because it might be one of directives. */
             goto handle_line;
          }
          else
-            fprintf(output_file, ";</ld>\n");
+            fprintf(output_file, ";     </ld>\n");
       }
    }
 
