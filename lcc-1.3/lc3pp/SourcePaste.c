@@ -36,7 +36,7 @@ void OutputSource(int fileId, int untilLine)
 		}
 		// is the line not empty
 		if (*p) {
-			fprintf(outputFile, ";|%s:%d| %s", srcNames[fileId], i, srcLine);
+			fprintf(outputFile, ";|%s:%-3d| %s", srcNames[fileId], i, srcLine);
 		}
 	}
 	srcLastLineNo[fileId] = i;

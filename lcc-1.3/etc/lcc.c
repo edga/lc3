@@ -200,6 +200,7 @@ int main(int argc, char *argv[]) {
 
 	/* Save the C source into assembly as a comments */
 	if (errcnt == 0 && !Eflag && (gflag & 1)) {
+	  int status;
 	  char *temp = tempname(strrchr(SourcePasteFile, '.'));
 	  char glevel[] = "-g "; glevel[2] = gflag + '0';
 	  compose(SourcePaste, append(glevel, 0), append(SourcePasteFile, 0), append(temp, 0));
@@ -207,8 +208,14 @@ int main(int argc, char *argv[]) {
 	    errcnt++;
 	  if (verbose > 0)
 	    fprintf(stderr, "rename(%s, %s)\n", temp, SourcePasteFile);
-	  if (verbose < 2 && rename(temp, SourcePasteFile))
-	    errcnt++;
+          if (verbose < 2 && (status=remove(SourcePasteFile))) {
+            perror("rename: failed to remove existing destination file");
+            errcnt++;
+          }
+          if (verbose < 2 && (status=rename(temp, SourcePasteFile))) {
+            perror("rename failed");
+            errcnt++;
+          }
 	}
 
 

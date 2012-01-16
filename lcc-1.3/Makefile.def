@@ -70,9 +70,10 @@ cleanInstall:
 
 install: all
 	${MKDIR} -p ${INSTALL_DIR}bin
+	${MKDIR} -p ${INSTALL_DIR}lc3lib
 	-${CP} -f src/rcc${EXE} etc/lcc${EXE} cpp/cpp${EXE} lc3pp/lc3pp${EXE} lc3pp/SourcePaste${EXE} \
 		${INSTALL_DIR}bin
-	-${CP} -f -r lc3lib ${INSTALL_DIR}
+	-${CP} -vf lc3lib/*.asm lc3lib/*.h ${INSTALL_DIR}lc3lib
 	${INSTALL_POST_CMD}
 	${CHMOD} 555 ${INSTALL_DIR}bin/rcc${EXE} \
 		${INSTALL_DIR}bin/lcc${EXE} ${INSTALL_DIR}bin/cpp${EXE} \
