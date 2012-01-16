@@ -130,7 +130,10 @@ const char * HELP_LIST =
 "  delete breakpoints BREAKPOINT_ID [BREAKPOINT_ID...]                 -- Delete the breakpoints\n"
 "  disable breakpoints BREAKPOINT_ID [BREAKPOINT_ID...]                -- Disable the breakpoints\n"
 "  enable [breakpoints] [once|delete] BREAKPOINT_ID [BREAKPOINT_ID...] -- Enable the breakpoints\n"
-
+"== Watchpoint (stop execution on memory access) ==\n"
+"  watch [clear] FIRST_ADDR LAST_ADDR    -- Set/clear watchpoints on address write\n"
+"  rwatch [clear] FIRST_ADDR LAST_ADDR   -- Set/clear watchpoints on address read\n"
+"  awatch [clear] FIRST_ADDR LAST_ADDR   -- Set/clear watchpoints on address read/write\n"
 "\n=== Examining the state of the program ===\n"
 "  print|p|output EXPRESSION    -- Print the value of the EXPRESSION\n"
 "  info locals                  -- Show local variables of current stack frame\n"
@@ -373,7 +376,13 @@ void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, b
       printf("%.4x in <unknown>\n", scope & 0xFFFF);
     }
   } else if (!quiet_mode) {
-    printf("0x%.4x: %.4x: ", scope & 0xFFFF, mem[scope] & 0xFFFF);
+    SourceLocation sl = src_info.find_source_location_short(scope);
+    if (sl.lineNo > 0) {
+      printf("%s:%d:\t at ",
+        sl.fileName, sl.lineNo);
+    } 
+    printf("0x%.4x:[%.4x]\t ",
+        scope & 0xFFFF, mem[scope]&0xFFFF);
     cpu.decode(mem[scope]);
   }
   print_displays(cpu, mem, src_info, true);
@@ -630,6 +639,73 @@ void print_frame(FrameInfo *frame, LC3::CPU &cpu, Memory &mem, SourceInfo &src_i
   printf(") %s\n", frame->sourceLocation);
 }
 
+
+// This is a quick and dirty implementation made in big hurry
+FILE *traceout = NULL;  // enable to get the memory traces
+std::set<uint16_t> w_watchpoints; // addresses for write watchpoints
+std::set<uint16_t> r_watchpoints; // addresses for read watchpoints
+bool watchpoint_was_hit = false;
+
+void set_watchpoint_range(uint16_t first, uint16_t last, char kind) {
+  uint16_t addr;
+  if (kind == 'w' || kind == 'a') {
+    for (addr=first; addr <= last; addr++) {
+      w_watchpoints.insert(addr);
+    }
+  }
+  if (kind == 'r' || kind == 'a') {
+    for (addr=first; addr <= last; addr++) {
+      r_watchpoints.insert(addr);
+    }
+  }
+}
+
+void clear_watchpoint_range(uint16_t first, uint16_t last, char kind) {
+  uint16_t addr;
+  if (kind == ' ' || kind == 'a') {
+    for (addr=first; addr <= last; addr++) {
+      w_watchpoints.clear(addr);
+    }
+  }
+  if (kind == 'r' || kind == 'a') {
+    for (addr=first; addr <= last; addr++) {
+      r_watchpoints.clear(addr);
+    }
+  }
+}
+
+// traced memory operations
+int16_t mem_read(Memory &mem, uint16_t addr)
+{
+  int16_t value = mem[addr];
+  if (r_watchpoints.count(addr)) {
+        printf("Watchpoint at 0x%04x:\n"
+                " Value = 0x%04x (%d)\n", addr, value, value);
+        watchpoint_was_hit = true;
+  }
+  if (traceout) {
+    fprintf(traceout, "MEM[%04x] RD %04x\n", addr & 0xFFFF, value & 0xFFFF);
+  }
+  return value;
+}
+
+// traced memory operations
+void mem_write(Memory &mem, uint16_t addr, int16_t value)
+{
+  int16_t oldValue = mem[addr];
+  if (w_watchpoints.count(addr)) {
+        printf("Watchpoint at 0x%04x:\n"
+                " Old Value = 0x%04x (%d)\n"
+                " New Value = 0x%04x (%d)\n", addr, oldValue, oldValue, value, value);
+        watchpoint_was_hit = true;
+  }
+  if (traceout) {
+    fprintf(traceout, "MEM[%04x] WR %04x\n", addr & 0xFFFF, value & 0xFFFF);
+  }
+  mem[addr] = value;
+}
+
+
 int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	     bool gui_mode, bool quiet_mode, const char *exec_file)
 {
@@ -700,6 +776,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     int step_over_calls = 0;
     int in_step_over_mode = 0;
     int show_help = 0;
+    watchpoint_was_hit = 0;
 
 #define CMD_HELP(msg) \
       if (show_help) { \
@@ -869,7 +946,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       } else {
 	incmd >> param1 >> param2;
       }
-      CMD_HELP(("  dump START_ADDR END_ADDR\n"
+      CMD_HELP(("  dump FIRST_ADDR LAST_ADDR\n"
 	    "Shows the content of the memory\n"));
       off = lexical_cast<uint16_t>(param1);
       uint16_t off2 = lexical_cast<uint16_t>(param2);
@@ -1083,6 +1160,30 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       } else {
 	printf("breakpoint specification [%s] is not valid\n", param1.c_str());
       }
+
+    } else if (cmdstr == "watch" || cmdstr == "rwatch" ||
+        cmdstr == "awatch") {
+      uint16_t first, last;
+      bool clear = false;
+      char kind = cmdstr[0];
+
+      incmd >> param1;
+      if (param1 == "clear") {
+        clear = true;
+        param1.clear();
+        incmd >> param1;
+        CMD_HELP(
+            ("  %s clear FIRST_ADDR LAST_ADDR\n"
+             "Clear watchpoints on address %s\n", cmdstr, (kind == 'w') ? "write" : (kind == 'r') ? "read" : "access"
+            ));
+      } 
+#error TODO: incomplete
+
+      CMD_HELP(
+          ("  undisplay DISPLAY_ID [DISPLAY_ID...]\n"
+           "Delete the displays with specified IDs. This is alias for `delete display' command.\n"
+           "The ID numbers corresponding to each display can be found by `info display' command.\n"
+          ));
 
 
     } else if (cmdstr == "display" || cmdstr == "disp") {
@@ -1355,6 +1456,9 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	    break;
 	  }
 	}
+        if (watchpoint_was_hit) {
+          break;
+        }
 	if (signal_received) {
 	  signal_received = 0;
 	  break;
@@ -1377,6 +1481,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
 	// next/nexti workaround
         // look at the lc3sim for ideas of how to implement this by counting the frames on call/ret
+        // CAlls:  JSR: 0xF800,0x4800;  JSRR:0xFE3F,0x4000;  TRAP:0xFF00,0xF000
+        // Ret: JMP R7 (0xFE3F,0xC1C0), RTI
 	if (step_over_calls) {
 	  uint16_t IR_opcode = mem[cpu.PC] & 0xF000;
 	  if (IR_opcode == 0xF000 || // TRAP

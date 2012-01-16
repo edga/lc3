@@ -45,12 +45,12 @@
 
 #define do_exception(sig) \
 { \
-  mem[--SSP] = PSR; \
+  mem_write(mem, --SSP, PSR); \
   PSR &= 0x7FFF; \
-  mem[--SSP] = R[6]; \
-  mem[--SSP] = PC; \
+  mem_write(mem, --SSP, R[6]); \
+  mem_write(mem, --SSP,  PC); \
   R[6] = SSP; \
-  PC = mem[0x0100 | sig]; \
+  PC = mem_read(mem, 0x0100 | sig); \
 }
 
 #ifdef DO_OPS
@@ -151,19 +151,19 @@ OP(JSRR,  (0,1,0,0,0,0,0,E,E,E,0,0,0,0,0,0))
 
 OP(LD,    (0,0,1,0,A,A,A,F,F,F,F,F,F,F,F,F))
 {
-  DR = mem[PC + IMM];
+  DR = mem_read(mem, PC + IMM);
   setcc(DR);
 }
 
 OP(LDI,   (1,0,1,0,A,A,A,F,F,F,F,F,F,F,F,F))
 {
-  DR = mem[mem[PC + IMM]];
+  DR = mem_read(mem, mem_read(mem, PC + IMM));
   setcc(DR);
 }
 
 OP(LDR,   (0,1,1,0,A,A,A,E,E,E,F,F,F,F,F,F))
 {
-  DR = mem[BaseR + IMM];
+  DR = mem_read(mem, BaseR + IMM);
   setcc(DR);
 }
 
@@ -182,10 +182,10 @@ OP(NOT,   (1,0,0,1,A,A,A,B,B,B,1,1,1,1,1,1))
 OP(RTI,   (1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
 {
   if ((PSR & 0x8000) == 0) {
-    PC = mem[R[6]];
+    PC = mem_read(mem, R[6]);
     SSP = R[6] + 1;
-    R[6] = mem[SSP++];
-    PSR = mem[SSP++];
+    R[6] = mem_read(mem, SSP++);
+    PSR = mem_read(mem, SSP++);
   } else {
     do_exception(0x00);
   }
@@ -193,23 +193,23 @@ OP(RTI,   (1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
 
 OP(ST,    (0,0,1,1,B,B,B,F,F,F,F,F,F,F,F,F))
 {
-  mem[PC + IMM] = SR;
+  mem_write(mem, PC + IMM, SR);
 }
 
 OP(STI,   (1,0,1,1,B,B,B,F,F,F,F,F,F,F,F,F))
 {
-  mem[mem[PC + IMM]] = SR;
+  mem_write(mem, mem_read(mem, PC + IMM), SR);
 }
 
 OP(STR,   (0,1,1,1,B,B,B,E,E,E,F,F,F,F,F,F))
 {
-  mem[BaseR + IMM] = SR;
+  mem_write(mem, BaseR + IMM, SR);
 }
 
 OP(TRAP,  (1,1,1,1,0,0,0,0,G,G,G,G,G,G,G,G))
 {
   R[7] = PC;
-  PC = mem[VEC];
+  PC = mem_read(mem, VEC);
 }
 
 /***********************************************

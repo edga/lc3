@@ -30,6 +30,9 @@
 #include "cpu.hpp"
 #include "util.hpp"
 
+extern int16_t mem_read(Memory &mem, uint16_t addr);
+extern void mem_write(Memory &mem, uint16_t addr, int16_t value);
+
 namespace CPU_NAME {
 
 CPU::CPU(Memory &mem) : mem(mem)

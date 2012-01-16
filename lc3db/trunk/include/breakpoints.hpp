@@ -34,6 +34,14 @@ enum BreakpointDisposition
   Delete
 };
 
+enum BreakpointKind
+{
+  bkBreakpoint,
+  bkWatchpoint,
+  bkRwatchpoint,
+  bkAwatchpoint
+};
+
 struct Breakpoint;
 
 typedef std::list<Breakpoint*>::iterator BreakpointIterator;
@@ -52,6 +60,7 @@ public:
   * Enable once/delete  (on hit action)
   * Hit: Check for active breakpoint at address
  */
+  int addWatch(uint16_t address, bool temp, BreakpointKind kind);
   int add(uint16_t address, bool temp);
   int add(uint16_t address, std::string fileName, int lineNo);
   int erase(int id);
@@ -64,6 +73,9 @@ public:
 private:
   SourceInfo &src_info;
   int last_id; 
+  // watchpoints
+  std::set<uint16_t> w_watchpoints;
+  std::set<uint16_t> r_watchpoints;
   // Active breakpoints for quick check before each execution cycle
   // Note that we don't support multiple breakpoints for same location (even though gdb does it).
   // Multiple breakpoints at same location don't make much sense without conditional breakpoints (which are not supported here).

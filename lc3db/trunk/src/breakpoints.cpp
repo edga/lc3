@@ -24,6 +24,7 @@
 struct Breakpoint
 {
   int id;
+  BreakpointKind kind;
   BreakpointDisposition disposition;
   bool enabled;
   uint16_t address;
@@ -34,6 +35,7 @@ struct Breakpoint
 
   Breakpoint(int _id, uint16_t _address, std::string _file, int _line) :
     id(_id), address(_address), file(_file), line(_line),
+    kind(bkBreakpoint),
     disposition(Keep), enabled(true), ignore_count(0), hits(0) {}
 };	
 
@@ -127,6 +129,35 @@ public:
 
 //////////////////////////////////////////////////////////
 // UserBreakpoits class
+int UserBreakpoits::addWatch(uint16_t address, bool temp, BreakpointKind kind)
+{ 
+  /*   Might avoid duplicate later 
+  BreakpointIterator it = lookupA(address);
+  if (it != breakpoints.end()) {
+    BreakpointsUI::duplicate(address, (*it)->id);
+    return -1;
+  }
+  */
+
+  Breakpoint* b = new Breakpoint(++last_id, address, "", -1);
+  if (temp) {
+    b->disposition = Delete;
+  }
+  b->kind = kind;
+  if (kind == bkWatchpoint || kind == bkAwatchpoint) {
+    w_watchpoints.insert(address);
+  }
+  if (kind == bkRwatchpoint || kind == bkAwatchpoint) {
+    r_watchpoints.insert(address);
+  }
+
+  breakpoints.push_back(b);
+
+  //BreakpointsUI::creation(last_id, address, temp, sl.fileName, sl.lineNo);
+
+  return last_id;
+}
+
 int UserBreakpoits::add(uint16_t address, bool temp)
 { 
   BreakpointIterator it = lookupA(address);
