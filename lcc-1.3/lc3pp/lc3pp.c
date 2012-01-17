@@ -404,7 +404,7 @@ int check_ldr(const char *line, int reg_num, int *poffset)
 static int calculate_address(int dstReg, int baseReg_, int offset, int withLDR, FILE *output) {
 	int baseReg = baseReg_;
 	int sum = 0;
-	int ldrOffset;
+	int ldrOffset = 0;
 
 	if (offset > 0) {
 		ldrOffset = withLDR ? MIN(offset,31) : 0;
@@ -416,7 +416,6 @@ static int calculate_address(int dstReg, int baseReg_, int offset, int withLDR, 
 				fprintf(output, "ADD R%d, R%d, #%-4d	; R%d[%d]\n", dstReg, baseReg, addOffset, baseReg_, sum);
 				baseReg = dstReg;
 			}
-		} else {
 		}
 	} else if (offset < 0) {
 		ldrOffset = withLDR ? MAX(offset,-32) : 0;
@@ -429,8 +428,8 @@ static int calculate_address(int dstReg, int baseReg_, int offset, int withLDR, 
 				baseReg = dstReg;
 			}
 		}
-	} else if (!withLDR) {
-		fprintf(output, "ADD R%d, R%d, #%-4d\n", dstReg, baseReg, offset);
+	} else if (!withLDR) { // offset is 0
+		fprintf(output, "ADD R%d, R%d, 0\n", dstReg, baseReg);
 	}
 
 	if (offset) {	// It was not efficient to calculate the offset, let's load it from the constant
@@ -439,7 +438,7 @@ static int calculate_address(int dstReg, int baseReg_, int offset, int withLDR, 
 		fprintf(output, "BR #1\n"
 				".FILL #%d\n"
 				"LD R%d, #-2\n"
-				"ADD R%d, R%d, R%d\n", offset+ldrOffset, dstReg, dstReg, baseReg, dstReg);
+				"ADD R%d, R%d, R%d\n", offset, dstReg, dstReg, baseReg, dstReg);
 		baseReg = dstReg;
 		sum = offset;
 	}
@@ -730,14 +729,15 @@ main (int argc, char *argv[])
          Readline(code_file, &curr_line, &curr_line_maxlen);
          with_LDR = check_ldr(curr_line, reg_num, &i);
          if(with_LDR) {
-            glob_offset += i;
+            var_offset += i;
          }
 
          /* Print a user friendly comment */
-         if(with_LDR)
-            fprintf(output_file, ";     <ld R%d, %s+%d\t;GLOBALS[%d]+%d>\n", reg_num, var_name, var_offset, glob_offset, var_offset);
+
+         if (var_offset)
+            fprintf(output_file, ";     <%s R%d, %s+%d\t;GLOBALS[%d]+%d>\n", with_LDR?"ld":"lea", reg_num, var_name, var_offset, glob_offset, var_offset);
          else
-            fprintf(output_file, ";     <lea R%d, %s+%d\t;GLOBALS[%d]+%d>\n", reg_num, var_name, var_offset, glob_offset, var_offset);
+            fprintf(output_file, ";     <%s R%d, %s\t;GLOBALS[%d]>\n", with_LDR?"ld":"lea", reg_num, var_name, glob_offset);
 
          calculate_address(reg_num, 4, var_offset+glob_offset, with_LDR, output_file);
 
