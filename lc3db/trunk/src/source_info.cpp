@@ -104,7 +104,7 @@ int SourceInfo::add_source_file(int fileId, std::string filePath)
   startAddresses.push_back(std::vector<uint16_t>());
 
   int pos = filePath.length()-1;
-  while(pos >= 0 && filePath[pos] != '/') {
+  while(pos >= 0 && filePath[pos] != '/' && filePath[pos] != '\\') {
     pos--;
   }
   fileNames.push_back(filePath.substr(pos+1));

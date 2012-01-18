@@ -334,7 +334,7 @@ uint16_t load_prog(const char *file, SourceInfo &src_info, Memory &mem, uint16_t
     }
 
   }
-  fprintf(stderr, "-----------------------------------------------------------------\n");
+  fprintf(stderr, "---------------------------------------------------------------------------------\n");
 
   if (pEntry) {
     if (entryLabel && src_info.symbol.count(entryLabel)) {
@@ -664,12 +664,12 @@ void clear_watchpoint_range(uint16_t first, uint16_t last, char kind) {
   uint16_t addr;
   if (kind == ' ' || kind == 'a') {
     for (addr=first; addr <= last; addr++) {
-      w_watchpoints.clear(addr);
+      w_watchpoints.erase(addr);
     }
   }
   if (kind == 'r' || kind == 'a') {
     for (addr=first; addr <= last; addr++) {
-      r_watchpoints.clear(addr);
+      r_watchpoints.erase(addr);
     }
   }
 }
@@ -680,7 +680,7 @@ int16_t mem_read(Memory &mem, uint16_t addr)
   int16_t value = mem[addr];
   if (r_watchpoints.count(addr)) {
         printf("Watchpoint at 0x%04x:\n"
-                " Value = 0x%04x (%d)\n", addr, value, value);
+                " Value = 0x%04x (%d)\n", addr, value & 0xFFFF, value);
         watchpoint_was_hit = true;
   }
   if (traceout) {
@@ -696,7 +696,7 @@ void mem_write(Memory &mem, uint16_t addr, int16_t value)
   if (w_watchpoints.count(addr)) {
         printf("Watchpoint at 0x%04x:\n"
                 " Old Value = 0x%04x (%d)\n"
-                " New Value = 0x%04x (%d)\n", addr, oldValue, oldValue, value, value);
+                " New Value = 0x%04x (%d)\n", addr, oldValue& 0xFFFF, oldValue, value& 0xFFFF, value);
         watchpoint_was_hit = true;
   }
   if (traceout) {
@@ -763,7 +763,12 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
   int saved_execution_range_end = INT_INFINITY;
   uint16_t selected_scope = cpu.PC;
 
-  show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
+//  show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
+  if (exec_file) {
+    printf("Use 'run' command to start the simulation of loaded object\n");
+  } else {
+    printf("Use 'load OBJECT_FILE' command to load the object for the simulation.\n");
+  }
 
   signal(SIGINT, sigproc);
   break_on_return = false;
@@ -1037,6 +1042,7 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	//}
 	int bt_id = breakpoints.add(entry, false);
 	show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode);
+        printf("Use 'run' command to start the simulation of loaded object\n");
 	mem[0xFFFE] = mem[0xFFFE] | 0x8000;
       } else {
 	printf("Could not open %s\n", param1.c_str());
@@ -1163,7 +1169,6 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
     } else if (cmdstr == "watch" || cmdstr == "rwatch" ||
         cmdstr == "awatch") {
-      uint16_t first, last;
       bool clear = false;
       char kind = cmdstr[0];
 
@@ -1174,16 +1179,30 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
         incmd >> param1;
         CMD_HELP(
             ("  %s clear FIRST_ADDR LAST_ADDR\n"
-             "Clear watchpoints on address %s\n", cmdstr, (kind == 'w') ? "write" : (kind == 'r') ? "read" : "access"
+             "Clear watchpoints on %s of addresses\n", cmdstr.c_str(), (kind == 'w') ? "write" : (kind == 'r') ? "read" : "access"
             ));
       } 
-#error TODO: incomplete
-
       CMD_HELP(
-          ("  undisplay DISPLAY_ID [DISPLAY_ID...]\n"
-           "Delete the displays with specified IDs. This is alias for `delete display' command.\n"
-           "The ID numbers corresponding to each display can be found by `info display' command.\n"
+          ("  %s FIRST_ADDR LAST_ADDR\n"
+           "Set watchpoints on %s of addresses\n", cmdstr.c_str(), (kind == 'w') ? "write" : (kind == 'r') ? "read" : "access"
           ));
+      incmd >> param2;
+
+      uint16_t first = 0;
+      uint16_t last = 0;
+      try {
+        first = lexical_cast<uint16_t>(param1);
+        last  = lexical_cast<uint16_t>(param2);
+      } catch(bad_lexical_cast &e) {
+        printf("Bad argument for the %s command (Two addresses expected)\nTry using the `help %s' command.\n", cmdstr.c_str(), cmdstr.c_str());
+        continue;
+      }
+
+      if (clear) {
+        clear_watchpoint_range(first, last, kind);
+      } else {
+        set_watchpoint_range(first, last, kind);
+      }
 
 
     } else if (cmdstr == "display" || cmdstr == "disp") {
