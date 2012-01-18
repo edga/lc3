@@ -655,7 +655,7 @@ int dump_lc3_memory(HANDLE hCom, int lc3_word_start, int lc3_word_stop) {
 			return -1;
 		}
 		for (w=0; w < bytesRead/2; w++) {
-			if (words_done+w % 8 == 0) {
+			if ((words_done+w) % 8 == 0) {
 				printf("\nx%04X:", lc3_word_start+words_done+w);
 			}
 			if ((words_done+w) % 4 == 0) {
