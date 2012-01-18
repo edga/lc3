@@ -166,7 +166,7 @@ resolve_externs(FILE** files, link_list link, int argc)
                     */
                   used_var[used_num].label = 1;
                   used_var[used_num].name =
-                     (char*) malloc(strlen(link.g[i].name));
+                     (char*) malloc(strlen(link.g[i].name)+1);
                   strcpy(used_var[used_num++].name, link.g[i].name);
 
                   while(1) {
@@ -199,7 +199,7 @@ resolve_externs(FILE** files, link_list link, int argc)
                         if(!present_flag) {
                            used_var[used_num].label = 0;
                            used_var[used_num].name =
-                              (char*) malloc(strlen(word));
+                              (char*) malloc(strlen(word)+1);
                            strcpy(used_var[used_num++].name, word);
                         }
                      } else if(strncmp(buf, "LC3_GFLAG",9) == 0) {
@@ -231,8 +231,9 @@ resolve_externs(FILE** files, link_list link, int argc)
                         if(!present_flag) {
                            used_var[used_num].label = 1;
                            used_var[used_num].name =
-                              (char*) malloc(strlen(word));
-                           strcpy(used_var[used_num++].name, word);
+                              (char*) malloc(strlen(word)+1);
+                           strcpy(used_var[used_num].name, word);
+                           used_num++;
                         }
                      } else if(strncmp(buf, "RET",3) == 0) {
                         break;
@@ -259,7 +260,7 @@ resolve_externs(FILE** files, link_list link, int argc)
                                        sizeof(link_variable)*link.em);
                               }
                               link.e[link.ei].name =(char*)
-                                 malloc(strlen(used_var[i].name));
+                                 malloc(1+strlen(used_var[i].name));
                               strcpy(link.e[link.ei].name, used_var[i].name);
                               link.e[link.ei++].argn = mfile;
                            }
