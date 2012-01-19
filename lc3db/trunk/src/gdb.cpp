@@ -389,29 +389,33 @@ void show_execution_position(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, b
 }
 
 
+/*
+ * Please make sure the behaviour matches the content of the `help print' command.
+ */
 VariableInfo* find_variable(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, const char* name, uint16_t scope){
   VariableInfo* v = src_info.find_variable(scope, name);
   if (!v) {
     uint16_t addr;
-    if (strcmp(name,"lc3CPU")==0 ||
-	strcasecmp(name,"lc3CPU.MCR")==0 ||
-	strcasecmp(name,"MCR")==0) {
-#warning "refactor the variable info into class wich returns the address (depending on the kind of the variable) and is able to print/set the value (depending on it's type)"
-      v = new VariableInfo(name, CpuSpecial);
-    } else if (cpu_special_variables.count(name)) {
-      v = new VariableInfo(name, CpuSpecial);
-    } else if (src_info.symbol.count(name)) {
+    if (src_info.symbol.count(name)) {                  // 2. Asm symbol
       addr = src_info.symbol[name];
-      v = new VariableInfo(name, AssemblerLabel, 0, addr);
+      return new VariableInfo(name, AssemblerLabel, 0, addr);
+    } else if (strcmp(name,"lc3CPU")==0 ||              // 3a. Special names (CPU)
+        strcasecmp(name,"lc3CPU.MCR")==0 ||
+        strcasecmp(name,"MCR")==0) {
+#warning "refactor the variable info into class wich returns the address (depending on the kind of the variable) and is able to print/set the value (depending on it's type)"
+      return new VariableInfo(name, CpuSpecial);
+    } else if (cpu_special_variables.count(name)) {     // 3b. Special names (CPU)
+      return new VariableInfo(name, CpuSpecial);
     } else {
-      try {
-	addr = lexical_cast<uint16_t>(name);
-	v = new VariableInfo(name, AssemblerLabel, 0, addr);
+      try {                                             // 4. Absolute address
+        addr = lexical_cast<uint16_t>(name);
+        return new VariableInfo(name, AssemblerLabel, 0, addr);
       } catch(bad_lexical_cast &e) {
-	return NULL;
+        return NULL; // empty info
       }
     }
   }
+
   return v;
   // TODO: FixMe: handle freeing/aliasing
 }
@@ -441,9 +445,11 @@ void set_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_i
 }
 
 
-void print_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, bool compressed=false){
+void print_variable(const VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, char modificator=' ', bool compressed=false){
   //const char *fmt = compressed ? "%s=0x%.4x %d" : "%s = 0x%.4x %d\n";
-  const char *fmt = compressed ? "%s=%d" : "%s = %d\n";
+  const char *fmt = compressed ? "%s=%s%d" : "%s = %s%d\n";
+  const char *modStr = modificator=='&' ? "(int *) " : "";
+#warning TODO: use modificator in `set var` 
   int16_t val;
 
   if (v->isCpuSpecial) {
@@ -462,12 +468,17 @@ void print_variable(VariableInfo *v, LC3::CPU &cpu, Memory &mem, SourceInfo &src
       return;
     }
   } else {
-    uint16_t addr = v->address + (v->isAddressAbsolute ? 0 : cpu.R[5]);
-    val = mem[addr] & 0xFFFF;
+    uint16_t addr = v.address + (v.isAddressAbsolute ? 0 : cpu.R[5]);
+    if (modificator = '&') {
+      val = (int16_t) addr;
+    } else if (modificator = '*') {
+      val = mem[mem[addr]] & 0xFFFF;
+    } else {
+      val = mem[addr] & 0xFFFF;
+    }
   }
 
-  //printf(fmt, v->name, val, val);
-  printf(fmt, v->name, val);
+  printf(fmt, v->name, modStr, val);
 }
 
 void print_registers(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, const char *value_sep, const char *reg_sep)
@@ -509,7 +520,7 @@ void print_displays(LC3::CPU &cpu, Memory &mem, SourceInfo &src_info, bool show_
   for (it=displays.rbegin(); it != displays.rend(); ++it) {
     printf("%d: ", it->id);
     if (show_values) {
-      print_variable(it->variable, cpu, mem, src_info);
+      print_variable(it->variable, cpu, mem, src_info, it->variable.modificator);
     } else {
       printf("  %c  %s\n", it->isActive ? 'y' : 'n', it->variable->name);
     }
@@ -895,17 +906,19 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 	    ("  set variable|var NAME = NEW_VALUE\n"
 	     "Sets the variable/register. Currently only simple variables can be set.\n"
 	     "The NAME can be C level variable visible in the current scope or CPU registers or assembler level label.\n"
+             "See also:\n"
+             "    `help print` for printing the current values\n"
 	    ));
 	param1.clear();
 	incmd >> param1 >> param2;
 	if (param2 != "=") {
-	  fprintf(stderr, "\"set\" command is only supported for setting simple variables. See: \"help set variable\"\n");
+	  fprintf(stderr, "\"set\" command is only supported for setting simple variables. See: \"help set var\"\n");
 	  continue;
 	}
 	incmd >> param2;
 
 
-	VariableInfo* v = find_variable(cpu, mem, src_info, param1.c_str(), selected_scope);
+	VariableInfo v = find_variable(cpu, mem, src_info, param1.c_str(), selected_scope);
 	if (v) {
 	  set_variable(v, cpu, mem, src_info, param2);
 	} else {
@@ -995,6 +1008,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
       CMD_HELP(
 	  ("  disassemble|dasm START END\n"
 	   "Disassemble insructions from address START to END.\n"
+           "See also:\n"
+           "    `help where` to display the call stack\n"
 	  ));
       // handle both comma and space (as used by different version of ddd)
       if (incmd.str().find(',') != std::string::npos){
@@ -1207,9 +1222,15 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
 
     } else if (cmdstr == "display" || cmdstr == "disp") {
       CMD_HELP(
-          ("  display [VARIABLE]\n"
-           "Add the VARIABLE to the display list, to be printed each time the program stops.\n"
-           "Without arguments shows the current display list.\n"
+          ("  display [EXPRESSION]\n"
+           "Add the EXPRESSION to the display list, to be printed each time the simulation stops.\n"
+           "For example, use `display lc3CPU' command to automatically show the content of the rigisters.\n"
+           "For complete list of accepted expressions see the `help print'.\n"
+           "When called without arguments, shows the current display list. See also:\n"
+           "    `help info display`\n"
+           "    `help disable display`\n"
+           "    `help enable display`\n"
+           "    `help delete display`\n"
           ));
       incmd >> param1;
 
@@ -1224,10 +1245,31 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     } else if (cmdstr == "print" || cmdstr == "p" || cmdstr == "output") {
       CMD_HELP(
           ("  print EXPRESSION\n"
-           "Show the value of the EXPRESSION. Currently the expression can only be single variable/register without any operators.\n"
+           "Show the value of the EXPRESSION. Currently the expression can only be single label/variable/register without any operators.\n"
+           "The following priority is used to interpret the EXPRESSION (in case of non uniq names for example):\n"
+           "   1. C symbols. (no types supported yet)\n"
+           "      The value printed will be content of the first memory location (irrespective of the type).\n"
+           "      The usual C search order applies: local (defined in closest `{ }' block), arguments, globals.\n"
+           "   2. Assembler symbols (labels).\n"
+           "      The function pointer (the address) by convention is saved in global named `lc3_FUNCTION_NAME'.\n"
+           "      Printing the label `FUNCTION_NAME' would print the first word of the function.\n"
+           "   3. Special names (CPU registers).\n"
+           "      The usual, short (case insensitive) names can be used (like `R1', `pc', `psr', `MCR').\n" 
+           "      The values can also be allways accessed with the `lc3CPU.' prefix (for example `lc3CPU.r0'), which can be handy in case of name clash.\n" 
+           "      To get all the cpu register values in one struct use `p lc3CPU' command\n"
+           "   4. Absolute address.\n"
+           "See also:\n"
+           "    `help display` for automatic printing of the expression\n"
+           "    `help set var` for changing the values of the variables\n"
+           "    `help x`       for dumping the content of the memory block\n"
+           "    `help dasm`    for disassembly\n"
           ));
       incmd >> param1;
-      VariableInfo* v = find_variable(cpu, mem, src_info, param1.c_str(), selected_scope);
+      if (param1[0] == '*' || param1[0] == '&')  {
+        VariableInfo* v = find_variable(cpu, mem, src_info, param1.c_str()+1, param1[0], selected_scope);
+      } else {
+        VariableInfo* v = find_variable(cpu, mem, src_info, param1.c_str(), selected_scope);
+      }
       if (v) {
 	print_variable(v, cpu, mem, src_info);
       }
@@ -1363,6 +1405,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
           CMD_HELP(
               ("  frame [FRAMENO]\n"
                "Selects and prints the FRAMENO stack frame. With no arguments prints the current frame.\n"
+               "See also:\n"
+               "    `help frame`   to select the frame (to use when printing/setting the locals/args)\n"
               ));
 	  //selected_frame = backtrace.frames.begin() + ((N==-1) ? 0 : N);
 	  selected_frame_id = ((N==-1) ? selected_frame_id : N);
@@ -1370,6 +1414,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
           CMD_HELP(
               ("  up [COUNT]\n"
                "Select and print the frame above (the caller of the current frame). With argument select frame COUNT frames apart.\n"
+               "See also:\n"
+               "    `help frame`   to select the frame (to use when printing/setting the locals/args)\n"
               ));
 	  selected_frame_id += ((N==-1) ? 1 : N);
 	  //selected_frame += (N==-1) ? 1 : N;
@@ -1378,6 +1424,8 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
           CMD_HELP(
               ("  down [COUNT]\n"
                "Select and print the frame below (the one called by the current frame). With argument select frame COUNT frames apart.\n"
+               "See also:\n"
+               "    `help frame`   to select the frame (to use when printing/setting the locals/args)\n"
               ));
 	  selected_frame_id -= ((N==-1) ? 1 : N);
 	  //selected_frame = backtrace.frames.begin() + (*selected_frame)->id -((N==-1) ? 1 : N);
@@ -1401,12 +1449,20 @@ int gdb_mode(LC3::CPU &cpu, SourceInfo &src_info, Memory &mem, Hardware &hw,
     } else if (cmdstr == "bt" || cmdstr == "backtrace" || cmdstr == "where") {
       CMD_HELP(
           ("  backtrace|bt|where\n"
-           "Print the call frames of the stack at current execution location.\n"));
+           "Print the call frames of the stack at current execution location.\n"
+           "See also:\n"
+           "    `help frame`   to select the frame (to use when printing/setting the locals/args)\n"
+           "    `help up`      to select the caller frame\n"
+           "    `help down`    to select the calle frame\n"
+           "    `help dasm`    for disassembly\n"));
       update_backtrace(cpu, mem, src_info);
 
-      for (int i=0; i < backtrace.frames.size(); i++) {
-	print_frame(backtrace.frames[i], cpu, mem, src_info);
+      if (backtrace.frames.size() > 1) {
+        for (int i=0; i < backtrace.frames.size(); i++) {
+          print_frame(backtrace.frames[i], cpu, mem, src_info);
+        }
       }
+      show_execution_position(cpu, src_info, mem, gui_mode, quiet_mode, selected_scope);
     } else if (cmdstr == "info") {
       incmd >> param1;
 #warning "fake command for developement. Remove it before a release!"
