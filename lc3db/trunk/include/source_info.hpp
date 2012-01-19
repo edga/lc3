@@ -60,24 +60,55 @@ enum VariableKind {
 struct VariableInfo{
   const char* name;
   VariableKind kind;
+  char modificator;	// '&':address, '*':dereference, ' ':none 
   int typeId;
   bool isCpuSpecial;
   bool isAddressAbsolute;
   int address;	// LC3 absolute address if isAddressAbsolute; else frame (R5) offset
   VariableInfo(const char*_name, VariableKind _kind) :
-    name(strdup(_name)), kind(_kind),
+    name(strdup(_name)), kind(_kind), modificator(' '),
     typeId(0), isCpuSpecial(1), isAddressAbsolute(0), address(0) 
   {
     assert(kind==CpuSpecial);
   }
-  VariableInfo(const char*_name, VariableKind _kind, int _typeId, int _address) :
-    name(strdup(_name)), kind(_kind), typeId(_typeId), address(_address) 
+  VariableInfo(const char*_name, char _modificator, VariableKind _kind, int _typeId, int _address) :
+    name(strdup(_name)), kind(_kind), modificator(_modificator), typeId(_typeId), address(_address) 
   {
     isCpuSpecial = _kind==CpuSpecial;
     isAddressAbsolute = _kind==FileGlobal || _kind==FileStatic || _kind==FunctionStatic || _kind==AssemblerLabel;
   }
+  VariableInfo(const char*_name, VariableKind _kind, int _typeId, int _address) {
+	  VariableInfo(_name, ' ', _kind, _typeId, _address);
+  }
+  
+//  // Empty VariableInfo
+//  VariableInfo() {
+//    VariableInfo(NULL, CpuSpecial);
+//  }
+//  // Empty VariableInfo
+//  operator bool() const {
+//    name && kind != CpuSpecial;
+//  }
+//
+//
 //  ~VariableInfo() {
 //    free((void*)name);
+//  }
+//
+//  VariableInfo(const VariableInfo& old_vi) {
+//    name = strdup(old_vi.name);
+//  }
+//
+//  VariableInfo& operator=( const VariableInfo &rhs ) {
+//    if( this == &rhs )
+//    {
+//	  return *this;
+//    }  
+//
+//    free((void*)name);
+//    name = strdup(rhs.name);
+//
+//    return *this;
 //  }
 };
 
