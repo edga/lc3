@@ -1,0 +1,44 @@
+
+Some notes on modifying the tools.
+
+* Extending Assembler
+
+Extending of assembler is fairly simple, the core code can be found in =lc3tools/lc3.f= which is flex processed C source. There is also a code for managing symbols (=symbol.c=), but it's modification was not needed.
+
+To add/modify instructions one needs:
+	1. Add new commands: Constants in =opcode_t= and names in =opnames= array. Make sure that they occur in the same order.
+	2. Add format of accepted arguments for your command in =op_format_ok= array. Again make sure to use =opcode_t= order.
+	3. Add appropriate flex rules to trigger your code then command keyword is read in the assembly source. It sounds complicated, but is simple, no knowledge of lex is needed, just look at neighboring lines :-)
+	4. Add case statements to generate extra instructions in the =generate_instruction()= function. Again this is fairly simple, just look at the neighboring code.
+	 
+To facilitate further modification, modifiable fragments (corresponding to steps just mentioned) are marked (in =lc3.f=) with following comment blocks:
+
+#+BEGIN_SRC c
+	 /***************************/
+	 /*	DTU extensions	    */
+
+	   ... Change code  here ...
+
+	 /*			    */
+	 /***************************/
+#+END_SRC
+
+
+
+
+* Extending Compiler
+
+Extending the compiler is a little bit more involving. It uses few stages to compile the program. The compilation procedure for lc3 target can be seen when lcc is invoked with "-v" option and is following:
+
+	+ *preprocessor* (cpp: =lcc-1.3/cpp/cpp.c=) merges all the includes and generates single C file.
+	+ *code generator* (rcc: =lcc-1.3/main.c=) with appropriate target (lc3 or lc3dtu) transforms single C file to abstract LC3 assembly file ("*.lcc").
+	    Exact placement of variables is not known yet, so special directive is used to denote variable offset read. For example, =.LC3GLOBAL L2_sort 7= means, to load offset of the =L2_sort= symbol to the register 7. 
+	+ *lc3 postprocessor* (lc3pp: "lc1.3/lc3pp/lc3pp.c") accepts "*.lcc" source, creates data segment, populates it with variables and fills appropriate code in place of ".LCGLOBAL" directives.
+	    It also tries to link missing external functions, by looking them with "<function>.asm" name in the "lc3lib" folder. This way implementation of libc functions like =printf()= is connected.
+	    The generated file is well formed and complete LC3 assembly source.
+ 	+ *lc3 assembler* (lc3as: =lc3tools/lc3.f=) generates "*.obj", "*.sym" and the rest.
+
+LCC framework is well designed, so one should need only to modify backend (lc3.md or lc3dtu.md) and lc3 postprocessor (lc3pp.c).
+The LCC is documented in the book, but some local modifications are possible without knowing all the
+details. The short documentation of the interface can be found here: http://drhanson.s3.amazonaws.com/storage/documents/interface4.pdf
+

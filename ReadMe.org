@@ -1,0 +1,78 @@
+LC3 toolchain sources adapted for DTU
+
+ + =automated_tests=: Tests programs to check the compliance of in-FPGA CPU with the simulator [no longer maintained].
+ + =lc3db=: Alternative LC3 simulator with gdb interface (can be used with DDD front end).
+ + =lc3tools=: Unix LC3 assembler and simulator from the book accompanying web-site.
+ + =lcc-1.3=: LCC based C compiler for LC3.
+ + =serial=: Serial terminal for uploading the lc3 programs onto the FPGA system.
+
+   
+* lc3db
+*Original authors:* \\
+    Anthony Liguori <aliguori@cs.utexas.edu> \\
+*Source code:* \\
+    http://www.cs.utexas.edu/users/fussell/courses/cs310h/simulator/lc3db/index.html#download.
+
+** Chages
+Various improvements:
+1. Breakpoints, displays etc...
+2. C-level debugging
+
+* lc3tools
+*Original authors:* \\
+Steven S. Lumetta \\
+*Source code:* \\
+http://highered.mcgraw-hill.com/sites/dl/free/0072467509/104652/lc3tools_v12.zip
+
+** Chages
+  1. Build script (configure/Makefile.def) modified to enable compilation to pure windows executables (using "--no-cygwin" option of the cygwin toolchain)
+  2. Bug fixes:
+     1. Object files were opened in "text" mode, causing corruption of generated files on windows (each '0x0D' byte was written as sequence of '0x0D' '0x0A').
+     2. Where were no proper checks for strtol() returning error.
+     3. Range checking for immediate values was not done correctly:
+     		=ADD R1, R0, 31= was accepted as valid (though 15 is the highest allowed constant). The code generated would be =ADD R1, R0, -1=.
+  3. Input enable simulator:
+     The simulator was using standard input for both control commands and to read the inputs for the program. It was also flushing input on command read, so it was hard to run a test with input.
+     Extra command line options was added to use the input for the program from the separate file.
+  4. Extra instructions added: 
+     1. Syntactic sugar:
+	+ NOP:       alias to ".FILL x0000"
+	+ .BLKWTO:   version of .BLKW which reserves memory until offset instead of reserving count words (used to align code to given address)
+     2. Immediate shifts:
+        + "SLL/SRA <imm4u>" are implemented in unused bits of ADD/AND:	
+      	  - SLL: 0001.dr.sr1.01.imm4u
+      	  - SRA: 0101.dr.sr1.01.imm4u
+     3. Extra RRR format (3 reg) arithmetics:
+     		SLL,SRA,DIV,MOD and MUL implemented in reserved instruction:
+			=1101.dr.sr1.func.sr2=
+		where 3bit 'func' field is 0,1,2... for SLL,SRA,DIV,MOD and MUL
+  5. Extra files generated:
+     1. "*.bin" file used for inclusion from VHDL code
+     	  Each word is written as text line of 16 characters ('0' or '1')
+     2. =*.ser= file used to upload file to the FPGA
+          The first word is size of the data/code words. The rest is the same as in "*.obj" file: Offset, {Code/Data}*
+
+* lcc-1.3
+*Original authors:* \\
+   - lcc authors: Christopher W. Fraser and David R. Hanson
+   - lc3 adaptation: Ajay Ladsaria \\
+*Source code:* \\
+http://highered.mcgraw-hill.com/sites/dl/free/0072467509/104652/lcc.zip
+
+** Chages
+ 
+  1. Enable compilation to pure windows executables:
+     1. Build script (configure/Makefile.def) modified to use "--no-cygwin" option of the cygwin toolchain
+     2. Paths in the source code were changed to use either unix or windows directory separators.
+
+  2. Bug Fixes:
+     See: "LC3 Evaluation Report" (separate file).
+
+  3. Target with DTU processor extensions added to allow generation of more compact and efficient code:
+     lcc-1.3/src/lc3.md was forked to lc3dtu.md. See: "Extending Compiler"
+     To invoke generation of code with extensions add "-target=lc3dtu" option to the lcc commandline. 
+
+  4. Removed linking of unused backends (sparc/mips/x86...), they wouldn't work anyway, because lc3 backend porters modified front end (mainly changed the limits for the types).
+
+  5. Implemented debug information.
+
